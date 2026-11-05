@@ -2,7 +2,7 @@
   
 # CodeLive
   
-**Plataforma de compartilhamento de código ao vivo**
+### Plataforma de compartilhamento de código ao vivo
 
 [Inglês](README.md) · **Português**
 
