@@ -1,0 +1,35 @@
+# Local-only AI workspace
+superpowers/
+**/superpowers/
+
+# Secrets and environment config (commit only .env.example)
+.env
+.env.*
+!.env.example
+.appsettings
+.appsettings.*
+!*.appsettings.example
+*.local
+secrets/
+*.pem
+*.key
+credentials
+credentials.*
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Node / Vite
+node_modules/
+dist/
+
+# Logs and coverage
+*.log
+coverage/
+
+# Editors
+.vscode/
+.idea/
