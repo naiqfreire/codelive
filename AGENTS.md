@@ -1,9 +1,5 @@
 # AGENTS.md
 
-## Project context
-
-Codelive is a web platform for live code rooms. An authenticated user creates a room with a unique access code, chooses the language, and edits the code. Spectators join with the code, anonymously or with a nickname, and watch in read-only mode.
-
 ## Source of truth
 
 Respect this order of precedence:
@@ -28,7 +24,7 @@ Skills add task-specific guidance. They do not replace `AGENTS.md`, the specs, o
 
 ## Fixed decisions
 
-- Backend: Python, FastAPI, SQLAlchemy, Alembic, and PostgreSQL.
+- Backend: Python 3.14.10, FastAPI, SQLAlchemy, Alembic, and PostgreSQL.
 - Frontend: React + TypeScript + Vite + npm SPA, TailwindCSS, and CodeMirror 6.
 - Communication: REST for authentication and CRUD. WebSocket for live code and presence.
 - Architecture: Vertical Slice Architecture. One slice per feature.
