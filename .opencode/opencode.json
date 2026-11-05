@@ -1,0 +1,24 @@
+{
+  "permission": {
+    "read": {
+      "C:/dev/projects/codelive/.opencode/gsd-core/*": "allow"
+    },
+    "external_directory": {
+      "C:/dev/projects/codelive/.opencode/gsd-core/*": "allow"
+    }
+  },
+  "mcp": {
+    "gsd": {
+      "type": "local",
+      "command": [
+        "npx",
+        "-y",
+        "-p",
+        "@opengsd/gsd-core",
+        "gsd-mcp-server",
+        "--no-prompts"
+      ],
+      "enabled": true
+    }
+  }
+}
