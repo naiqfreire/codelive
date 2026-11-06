@@ -76,7 +76,7 @@ def _migrate():
     )
     env = {**os.environ, "DATABASE_URL": test_url}
     result = subprocess.run(
-        [str(Path(project_root) / ".venv" / "bin" / "alembic"), "upgrade", "head"],
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
         cwd=str(Path(project_root) / "backend"),
         env=env,
         capture_output=True,
