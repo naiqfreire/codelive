@@ -16,6 +16,13 @@ O **CodeLive** é uma plataforma web que permite a usuários autenticados criare
 
 O dono da sala edita o código em tempo real, enquanto outros usuários entram como espectadores e visualizam a evolução do código em modo somente leitura. A plataforma conta com destaque de sintaxe, atualização automática instantânea e histórico de versões, sendo ideal para estudantes, professores e qualquer pessoa que queira compartilhar código de forma prática e ao vivo.
 
+## 🚀 Como rodar localmente
+
+Tutoriais passo a passo para configurar e rodar o projeto na sua máquina:
+
+- **Linux, macOS ou WSL:** [docs/TUTORIAL.pt-BR.md](docs/TUTORIAL.pt-BR.md) (Português) · [docs/TUTORIAL.md](docs/TUTORIAL.md) (English)
+- **Windows (nativo):** [docs/TUTORIAL-WINDOWS.pt-BR.md](docs/TUTORIAL-WINDOWS.pt-BR.md) (Português) · [docs/TUTORIAL-WINDOWS.md](docs/TUTORIAL-WINDOWS.md) (English)
+
 ## 👥 Contribuidores
 
 - [Naiaque Freire](https://github.com/naiqfreire)
