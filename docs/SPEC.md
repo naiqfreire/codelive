@@ -107,20 +107,24 @@ Invariantes:
 
 ## 7. API e WebSocket
 
-| Método e rota                                   | Descrição                             |
-| ----------------------------------------------- | ------------------------------------- |
-| `POST api/auth/register`                        | Cadastro                              |
-| `POST /auth/login`                              | Login                                 |
-| `POST /rooms`                                   | Criar sala                            |
-| `GET /rooms/mine`                               | Salas do dono                         |
-| `PATCH /rooms/{id}/close`                       | Encerrar sala                         |
-| `POST /rooms/{id}/regenerate-code`              | Regenerar código de acesso            |
-| `GET /rooms/by-code/{codigo}`                   | Validar código de acesso              |
-| `POST /rooms/{id}/join`                         | Entrar na sala                        |
-| `GET /rooms/joined`                             | Salas em que o usuário foi espectador |
-| `GET /rooms/{id}/versions`                      | Listar versões                        |
-| `POST /rooms/{id}/versions/{versionId}/restore` | Restaurar versão                      |
-| WebSocket `/ws/rooms/{room_id}`                 | Código ao vivo e presença             |
+| Método e rota                                       | Descrição                             |
+| --------------------------------------------------- | ------------------------------------- |
+| `POST /api/auth/register`                           | Cadastro                              |
+| `POST /api/auth/login`                              | Login                                 |
+| `POST /api/auth/logout`                             | Logout                                |
+| `GET /api/auth/me`                                  | Usuário da sessão                     |
+| `POST /api/rooms`                                   | Criar sala                            |
+| `GET /api/rooms/mine`                               | Salas do dono                         |
+| `PATCH /api/rooms/{id}/close`                       | Encerrar sala                         |
+| `POST /api/rooms/{id}/regenerate-code`              | Regenerar código de acesso            |
+| `GET /api/rooms/by-code/{codigo}`                   | Validar código de acesso              |
+| `POST /api/rooms/{id}/join`                         | Entrar na sala                        |
+| `GET /api/rooms/joined`                             | Salas em que o usuário foi espectador |
+| `GET /api/rooms/{id}/versions`                      | Listar versões                        |
+| `POST /api/rooms/{id}/versions/{versionId}/restore` | Restaurar versão                      |
+| WebSocket `/api/ws/rooms/{room_id}`                 | Código ao vivo e presença             |
+
+Todas as rotas do backend vivem sob `/api`; o front estático é servido na raiz, com fallback para `index.html`.
 
 Mensagens WebSocket: `join`, `code_update`, `presence`, `snapshot` e `error`.
 
@@ -152,7 +156,7 @@ O MVP entrega observabilidade mínima, embutida na aplicação, sem serviços ex
 
 - **Logs estruturados no back-end.** Todos os logs da aplicação FastAPI são emitidos em JSON para stdout. Os campos base são `timestamp`, `level`, `event`, `request_id`, `room_id` (quando aplicável), `user_id` (quando aplicável) e `duration_ms` (quando aplicável). Eventos específicos adicionam campos próprios: `snapshot` e `code_update` incluem `content_hash`. Não é permitido uso de `print` nem de log em texto livre no caminho principal.
 - **Correlation ID por requisição.** Um middleware gera um `request_id` (UUID) no início de cada requisição REST e o propaga para os logs e para as respostas de erro. Em mensagens WebSocket, o `request_id` da conexão inicial é mantido durante toda a sessão e incluído nos logs relacionados.
-- **Health check.** `GET /health` retorna `200` com `{"status": "ok", "db": "ok"}` quando a aplicação e o banco respondem, e `503` caso contrário. É o único endpoint obrigatório para verificação de disponibilidade no MVP.
+- **Health check.** `GET /api/health` retorna `200` com `{"status": "ok", "db": "ok"}` quando a aplicação e o banco respondem, e `503` caso contrário. É o único endpoint obrigatório para verificação de disponibilidade no MVP.
 - **Logs estruturados no front-end.** Erros não tratados (`window.onerror` e `unhandledrejection`), falhas de chamadas HTTP e o recebimento de `snapshot` e `code_update` são registrados no console do navegador em formato estruturado, com `timestamp` e o `request_id` retornado pelo back-end. Não há envio para serviço externo no MVP.
 
 ### 9.3 O que fica fora do escopo do MVP
@@ -171,7 +175,7 @@ Esses itens serão adicionados após a entrega. Os pré-requisitos acima (logs e
 - **RNF02 (propagação em até 5 segundos).** Verificada manualmente: o log do `code_update` no back-end inclui `timestamp` e `room_id`; o log do front-end ao receber o `snapshot` inclui `timestamp` e `request_id`. A diferença entre os dois timestamps é a latência de propagação. O teste Playwright do fluxo ponta a ponta registra essa diferença e falha se exceder 5 segundos.
 - **RNF04 (não perder código em recarregamento ou queda simples).** O log de `snapshot` e de `code_update` registra `room_id` e `content_hash`, permitindo verificar que o estado recuperado é idêntico ao último persistido.
 - **RNF06 (não perder mais de 30 segundos de edição).** O job de snapshot emite um log a cada execução, com `room_id` e `duration_ms`. A ausência de logs por mais de 30 segundos durante uma edição ativa é tratada como incidente.
-- **Disponibilidade.** O endpoint `GET /health` é consultado manualmente antes de cada sessão de uso. Não há monitoramento automático no MVP.
+- **Disponibilidade.** O endpoint `GET /api/health` é consultado manualmente antes de cada sessão de uso. Não há monitoramento automático no MVP.
 
 ### 9.5 Retenção
 
