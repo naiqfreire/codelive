@@ -115,6 +115,30 @@ Every change follows **failing test first -> implement -> verify**:
 
 Don't write implementation before a failing test exists. When fixing a bug, reproduce it with a failing test first.
 
+## Execution pacing
+
+Implement at most **one slice** (one feature/context) per uninterrupted run —
+for example, the complete `features/auth/` slice (router, schemas, service,
+models, public, tests). Do not implement all features quickly in a single run.
+
+When a slice is finished and verified (tests and build green), the agent
+**must stop** and present the slice's commit series:
+
+- One commit per independent file;
+- Files with a real dependency between them (e.g. a router importing a
+  service, or a test importing the module it exercises) go in the **same
+  commit**, in chronological/dependency order;
+- A file changed in two different plans gets one commit per change, in plan
+  order;
+- For each commit: the `git diff` (or exact list of files), the proposed
+  message (Conventional Commits + task id), and the test/build output.
+
+Then it must ask for **explicit authorization to continue**. An authorization
+("continue", "proceed", "yes") covers **only the next unit** — after finishing
+it, the agent stops again and asks for a new authorization. Finishing a slice
+never authorizes starting the next one. This applies to single features, bug
+fixes, and docs alike.
+
 ## Commit discipline
 
 Branch model:
