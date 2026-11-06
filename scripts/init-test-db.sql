@@ -1,0 +1,2 @@
+-- Empty database, ready for Alembic migrations
+-- No schema here — Alembic will create all tables on first run
