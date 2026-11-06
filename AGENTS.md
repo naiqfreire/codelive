@@ -39,6 +39,7 @@ Skills add task-specific guidance. They do not replace `AGENTS.md`, the specs, o
 - Retention: delete versions older than 30 days, except the most recent version of each room.
 - Caching: `cachetools` in-memory on the backend; TanStack Query with `localStorage` persistence on the frontend. No distributed cache in the MVP.
 - Tests: pytest for the backend, Vitest for the frontend, Playwright for full flows, and k6 for load.
+- Backend dependencies (authorized 2026-11-05): uvicorn[standard], sqlalchemy[asyncio], psycopg[binary], alembic, pydantic-settings, python-dotenv, argon2-cffi, itsdangerous, structlog, email-validator; tests: pytest, pytest-asyncio, httpx.
 - Browsers: current versions of Chrome, Firefox, and Edge.
 - Systems: Windows and Linux.
 - Tools: free and open-source only.
@@ -182,7 +183,7 @@ k6 run loadtest/rooms.js
 - Run the load test with 2 rooms x 30 spectators. Verify propagation within 5 seconds and no lost updates.
 - Smoke test in Chrome, Firefox, and Edge.
 - Report command output. Do not claim success without evidence.
-- Observability in the MVP means: structured JSON logs, `GET /health`, and a correlation ID per request. Do not add metrics, dashboards, traces, alerts, or external uptime monitoring until the user explicitly moves the project to phase 2.
+- Observability in the MVP means: structured JSON logs, `GET /api/health`, and a correlation ID per request. Do not add metrics, dashboards, traces, alerts, or external uptime monitoring until the user explicitly moves the project to phase 2.
 - Front-end logging: capture `window.onerror`, `unhandledrejection`, failed HTTP calls, and `snapshot`/`code_update` receipt in structured console logs including `timestamp` and `request_id`.
 
 ## Completion Report
