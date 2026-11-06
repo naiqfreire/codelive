@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [develop]
+  pull_request:
+    branches: [develop]
+
+jobs:
+  backend:
+    name: Backend (Python 3.14)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Create .env from template
+        run: |
+          cp .env.example .env
+          python - <<'PY'
+          import secrets, pathlib
+          p = pathlib.Path(".env")
+          text = p.read_text().replace(
+              "localhost:5432/codelive_test", "localhost:5433/codelive_test"
+          )
+          lines = [
+              f"SESSION_SECRET={secrets.token_urlsafe(32)}"
+              if line.startswith("SESSION_SECRET=")
+              else line
+              for line in text.splitlines()
+          ]
+          p.write_text("\n".join(lines) + "\n")
+          PY
+
+      - name: Start PostgreSQL (Docker Compose)
+        run: docker compose up -d --wait
+
+      - name: Run migrations (test DB)
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+psycopg://codelive:codelive@localhost:5433/codelive_test
+        run: alembic upgrade head
+
+      - name: Run unit tests (no database)
+        run: python -m pytest backend/app/features -q
+
+      - name: Run integration tests (real PostgreSQL)
+        run: python -m pytest backend/tests/integration -q
+
+      - name: Tear down PostgreSQL
+        if: always()
+        run: docker compose down -v
