@@ -1,0 +1,16 @@
+# Runtime dependencies — exact pins (D-23, authorized 2026-11-05)
+# Every name below appears verbatim in AGENTS.md "Backend dependencies (authorized 2026-11-05)".
+# Do NOT add packages outside that list. Do NOT remove the pin on starlette/sqlalchemy/fastapi.
+fastapi==0.162.0
+starlette==1.10.0
+uvicorn[standard]==0.54.0
+sqlalchemy[asyncio]==2.1.8
+psycopg[binary]==3.3.8
+alembic==1.20.1
+pydantic==2.14.3
+pydantic-settings==2.16.2
+argon2-cffi==25.1.0
+itsdangerous==2.2.0
+structlog==26.1.0
+email-validator==2.3.0
+python-dotenv==1.2.4
