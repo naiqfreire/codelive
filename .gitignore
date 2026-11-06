@@ -1,6 +1,7 @@
 # Local-only AI workspace
 superpowers/
 **/superpowers/
+.planning/
 
 # Secrets and environment config (commit only .env.example)
 .env
