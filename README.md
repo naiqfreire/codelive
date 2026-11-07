@@ -23,6 +23,18 @@ Step-by-step tutorials to set up and run the project on your machine:
 - **Linux, macOS or WSL:** [docs/TUTORIAL.md](docs/TUTORIAL.md) (English) · [docs/TUTORIAL.pt-BR.md](docs/TUTORIAL.pt-BR.md) (Português)
 - **Windows (native):** [docs/TUTORIAL-WINDOWS.md](docs/TUTORIAL-WINDOWS.md) (English) · [docs/TUTORIAL-WINDOWS.pt-BR.md](docs/TUTORIAL-WINDOWS.pt-BR.md) (Português)
 
+## 🖥️ Frontend
+
+Requirements: Node.js 20+ and npm.
+
+```bash
+cd frontend
+npm ci
+npm run dev
+```
+
+Other scripts: `npm run build`, `npm run lint`, `npm run format`, `npm run format:check`, `npm run typecheck`, `npm run test`.
+
 ## 👥 Contributors
 
 - [Naiaque Freire](https://github.com/naiqfreire)
