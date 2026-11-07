@@ -40,6 +40,7 @@ Skills add task-specific guidance. They do not replace `AGENTS.md`, the specs, o
 - Caching: `cachetools` in-memory on the backend; TanStack Query with `localStorage` persistence on the frontend. No distributed cache in the MVP.
 - Tests: pytest for the backend, Vitest for the frontend, Playwright for full flows, and k6 for load.
 - Backend dependencies (authorized 2026-11-05): uvicorn[standard], sqlalchemy[asyncio], psycopg[binary], alembic, pydantic-settings, python-dotenv, argon2-cffi, itsdangerous, structlog, email-validator; tests: pytest, pytest-asyncio, httpx.
+- Frontend dependencies (authorized 2026-11-07, task #5): react, react-dom, vite, @vitejs/plugin-react, typescript, tailwindcss, postcss, autoprefixer; tests: vitest, jsdom, @testing-library/react, @testing-library/jest-dom, @testing-library/dom; tooling: eslint, @eslint/js, typescript-eslint, eslint-plugin-react-hooks, eslint-plugin-react-refresh, eslint-config-prettier, globals, prettier.
 - Browsers: current versions of Chrome, Firefox, and Edge.
 - Systems: Windows and Linux.
 - Tools: free and open-source only.
