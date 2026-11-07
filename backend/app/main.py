@@ -5,6 +5,7 @@ from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.features.auth import router as auth
+from app.features.rooms import router as rooms
 from app.shared import health
 from app.shared.config import get_settings
 from app.shared.errors import register_handlers
@@ -29,4 +30,5 @@ api = APIRouter(prefix="/api")
 api.include_router(health.router)
 api.include_router(auth.public_router, prefix="/auth")
 api.include_router(auth.protected_router, prefix="/auth")
+api.include_router(rooms.router, prefix="/rooms")
 app.include_router(api)
