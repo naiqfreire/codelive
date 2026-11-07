@@ -31,6 +31,7 @@ _PORTUGUESE_REASONS = {
     "string_too_long": "máximo de {ctx} caracteres",
     "extra_forbidden": "campo não permitido",
     "value_error": "e-mail inválido",
+    "literal_error": "deve ser um de: {ctx}",
 }
 
 
@@ -58,7 +59,9 @@ def register_handlers(app: FastAPI) -> None:
             reason = _PORTUGUESE_REASONS.get(err.get("type", ""), err.get("msg", "inválido"))
             if isinstance(reason, str) and "{ctx}" in reason:
                 ctx = err.get("ctx", {})
-                limit = ctx.get("min_length") or ctx.get("max_length") or ""
+                limit = ctx.get("min_length") or ctx.get("max_length") or ctx.get("expected") or ""
+                if isinstance(limit, str):
+                    limit = limit.replace(" or ", " ou ")
                 reason = reason.format(ctx=limit)
             parts.append(f"{loc}: {reason}" if loc else reason)
         message = "; ".join(parts) if parts else ERROR_MESSAGES[ErrorCode.VALIDATION_ERROR]
