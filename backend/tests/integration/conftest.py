@@ -142,10 +142,17 @@ async def client(test_engine):
 
 
 @pytest.fixture(autouse=True)
-async def _clean_users(test_engine):
-    """Isolate tests: empty the users table before each test."""
+async def _clean_tables(test_engine):
+    """Isolate tests: empty the users table before each test.
+
+    Phase 2: rooms.owner_id -> users.id is ON DELETE RESTRICT, so
+    DELETE FROM users would raise RestrictViolation once a room
+    exists. TRUNCATE ... CASCADE reaches every table holding a
+    foreign key to users (rooms, room_members) without naming
+    tables that may not exist yet.
+    """
     from sqlalchemy import text as _t
 
     async with test_engine.begin() as conn:
-        await conn.execute(_t("DELETE FROM users"))
+        await conn.execute(_t("TRUNCATE users RESTART IDENTITY CASCADE"))
     yield
