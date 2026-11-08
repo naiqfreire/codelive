@@ -3,9 +3,6 @@
 Siga este guia se você está no **Windows** e quer rodar o CodeLive de forma
 nativa (no PowerShell ou CMD), sem WSL.
 
-> **Já está no Linux, macOS ou WSL?** Você não precisa deste arquivo — o
-> `README.md` principal funciona lá do jeito que está.
-
 ---
 
 ## O que você precisa
