@@ -3,9 +3,9 @@ import { describe, expect, it } from 'vitest'
 import App from './App'
 
 describe('App', () => {
-  it('renders the CodeLive brand', () => {
+  it('redirects to the login screen', async () => {
     render(<App />)
 
-    expect(screen.getByRole('heading', { name: /codelive/i })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: /entrar/i })).toBeInTheDocument()
   })
 })
