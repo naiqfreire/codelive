@@ -26,6 +26,7 @@ if config.config_file_name is not None:
 
 import os
 
+from app.shared.asyncio_policy import ensure_selector_event_loop
 from app.shared.database import Base
 from app.features.auth import models  # noqa: F401
 from app.features.rooms import models  # noqa: F401
@@ -93,6 +94,7 @@ async def run_async_migrations() -> None:
 
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode."""
+    ensure_selector_event_loop()
 
     asyncio.run(run_async_migrations())
 
