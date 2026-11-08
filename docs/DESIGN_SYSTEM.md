@@ -70,15 +70,18 @@ Regras:
 ### 6.1 LanguageSelector (#19)
 
 - Seleciona a **linguagem de programação** da sala: Python, Java, C, PHP e JavaScript (RF08).
-- Primeira versão: `<select>` nativo estilizado — acessível por teclado e leitor de tela.
-- Rótulo visível associado ao controle; ícone/indicador da linguagem ao lado do valor.
+- Implementação: `<select>` nativo estilizado em `features/rooms/components/LanguageSelector.tsx`
+  — acessível por teclado e leitor de tela, sem ícone decorativo.
+- Rótulo visível associado ao controle.
 - Altura mínima 44 px, borda `border-border`, fundo `bg-surface`, foco `ring-ring`.
 - Estado desabilitado com `opacity-50` e `cursor-not-allowed`.
 
 ### 6.2 AccessCode (#19)
 
 Código de acesso de **6 caracteres**, maiúsculos, sem ambíguos
-(`A–Z` sem `O/I/L` + dígitos `2–9`), por exemplo `K7M2QX`.
+(`A–Z` sem `I/O` + dígitos `2–9`, alinhado ao alfabeto do backend em
+`backend/app/features/rooms/service.py`), por exemplo `K7M2QX`.
+Implementação em `features/rooms/components/AccessCode.tsx` + `features/rooms/accessCode.ts`.
 
 - **Modo display (dono):** código em `font-mono`, `tracking-[0.2em]`, botão "Copiar" com feedback
   visual e `aria-live="polite"` ("Copiado!"). Fallback sem Clipboard API: selecionar o texto e
