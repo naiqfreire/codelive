@@ -49,7 +49,7 @@ jobs:
         working-directory: backend
         env:
           DATABASE_URL: postgresql+psycopg://codelive:codelive@localhost:5433/codelive_test
-        run: alembic upgrade head
+        run: python -m alembic upgrade head
 
       - name: Run unit tests (no database)
         run: python -m pytest backend/app/features -q
