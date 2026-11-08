@@ -38,3 +38,4 @@ Outros scripts: `npm run build`, `npm run lint`, `npm run format`, `npm run form
 ## 👥 Contribuidores
 
 - [Naiaque Freire](https://github.com/naiqfreire)
+- [Yan Yasser](https://github.com/y4sse)

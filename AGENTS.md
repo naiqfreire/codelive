@@ -6,8 +6,9 @@ Respect this order of precedence:
 
 1. `AGENTS.md`.
 2. `docs/SPEC.md` for the canonical public system definition: requirements (RF/RNF), architecture, data model, API, authorization, and observability. `SPEC.md` is public and written in Portuguese.
-3. `.agents/skills/` for task-specific agent instructions. A skill never overrides `AGENTS.md`.
-4. Existing code and tests for current behavior.
+3. `docs/DESIGN_SYSTEM.md` for the frontend visual contract: design tokens, typography, spacing, focus/error/loading states, motion, and accessibility. Every frontend change must read and follow it.
+4. `.agents/skills/` for task-specific agent instructions. A skill never overrides `AGENTS.md`.
+5. Existing code and tests for current behavior.
 
 If two sources conflict, stop and ask. For any non-trivial decision (architecture, dependencies, security, caching, scope), present options, trade-offs (complexity, deadline, security, RF/RNF impact, reversibility), and one recommendation; wait for explicit approval. Do not choose silently.
 
@@ -40,7 +41,7 @@ Skills add task-specific guidance. They do not replace `AGENTS.md`, the specs, o
 - Caching: `cachetools` in-memory on the backend; TanStack Query with `localStorage` persistence on the frontend. No distributed cache in the MVP.
 - Tests: pytest for the backend, Vitest for the frontend, Playwright for full flows, and k6 for load.
 - Backend dependencies (authorized 2026-11-05): uvicorn[standard], sqlalchemy[asyncio], psycopg[binary], alembic, pydantic-settings, python-dotenv, argon2-cffi, itsdangerous, structlog, email-validator; tests: pytest, pytest-asyncio, httpx.
-- Frontend dependencies (authorized 2026-11-07, task #5): react, react-dom, vite, @vitejs/plugin-react, typescript, tailwindcss, postcss, autoprefixer; tests: vitest, jsdom, @testing-library/react, @testing-library/jest-dom, @testing-library/dom; tooling: eslint, @eslint/js, typescript-eslint, eslint-plugin-react-hooks, eslint-plugin-react-refresh, eslint-config-prettier, globals, prettier. Additional frontend dependency (authorized 2026-11-07, task #11): react-router-dom ^6.
+- Frontend dependencies (authorized 2026-11-07, task #5): react, react-dom, vite, @vitejs/plugin-react, typescript, tailwindcss, postcss, autoprefixer; tests: vitest, jsdom, @testing-library/react, @testing-library/jest-dom, @testing-library/dom; tooling: eslint, @eslint/js, typescript-eslint, eslint-plugin-react-hooks, eslint-plugin-react-refresh, eslint-config-prettier, globals, prettier. Additional frontend dependency (authorized 2026-11-07, task #11): react-router-dom ^7 (upgraded from ^6 in PR #9, together with vite ^8 and vitest ^5). CodeMirror 6 (authorized 2026-11-08, task #33): @codemirror/state, @codemirror/view, @codemirror/language, @codemirror/commands, @codemirror/lang-python, @codemirror/lang-java, @codemirror/lang-javascript, @codemirror/lang-php, @codemirror/lang-cpp, @lezer/highlight.
 - Browsers: current versions of Chrome, Firefox, and Edge.
 - Systems: Windows and Linux.
 - Tools: free and open-source only.
@@ -85,6 +86,7 @@ A slice reads data from another slice through the owner slice's `public.py`. Nev
 
 ## Frontend rules
 
+- Before any frontend change, read `docs/DESIGN_SYSTEM.md`. All frontend work (pages, components, focus/error/loading states, typography, colors, motion, and accessibility) must follow it. Use semantic tokens; never hardcode hexadecimal colors outside the token or theme files.
 - Use TypeScript in strict mode. Do not use `any` without justification.
 - Centralize HTTP calls in `src/features/*/api.ts`.
 - Keep authentication state in a context.
@@ -139,6 +141,12 @@ Then it must ask for **explicit authorization to continue**. An authorization
 it, the agent stops again and asks for a new authorization. Finishing a slice
 never authorizes starting the next one. This applies to single features, bug
 fixes, and docs alike.
+
+## Contributors
+
+- When starting work on the project, ask your user for their **full name** and **GitHub profile URL**.
+- Add the contributor to `README.md` and `README.pt-BR.md` with the same entry, in the same commit.
+- Never guess or infer a name or handle.
 
 ## Commit discipline
 

@@ -117,6 +117,25 @@ nesta fatia.
   fallback `role="status"` ("Carregando…").
 - **Alvos:** botão e campos com `min-h-11` (44 px).
 
+### 6.5 Editor de código (#33)
+
+- CodeMirror 6 em `features/live_code`, carregado sob demanda: o componente entra por code splitting e
+  cada linguagem é importada dinamicamente (`import()`), nunca no bundle inicial.
+- Tipografia JetBrains Mono 14 px, fundo `bg-surface`, gutter `bg-background`, cursor e seleção em
+  `accent`.
+- **Dono:** editor editável (`EditorView.editable` = `true`) com `onChange`.
+- **Espectador:** somente leitura (`EditorState.readOnly` + `EditorView.editable` = `false` +
+  `aria-readonly="true"`). A interface não é a autoridade: o servidor aplica RF13/RNF01.
+- Foco visível: anel branco (`ring`) em `.cm-focused`.
+- Sem quebra de linha: rolagem horizontal e vertical; altura mínima de 16 rem.
+- Sintaxe: extensões oficiais para Python, Java, C (`lang-cpp`), PHP e JavaScript, com
+  `HighlightStyle` próprio.
+- Sincronização externa (snapshot): o documento só é substituído quando o conteúdo difere,
+  preservando o cursor quando não há mudança.
+- `Tab` não é capturado pelo editor, preservando a navegação por teclado.
+- Exceção de token: as cores exigidas pelo CodeMirror ficam centralizadas em
+  `features/live_code/editorTheme.ts`; o restante da interface usa apenas tokens Tailwind.
+
 ## 7. Checklist de entrega
 
 - [ ] Nenhum emoji como ícone; SVG com `aria-hidden` quando decorativo.
