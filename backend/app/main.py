@@ -1,4 +1,9 @@
 """Composition root: FastAPI instance, /api prefix, middleware wiring."""
+
+# Must run before uvicorn creates its event loop: on Windows psycopg (async)
+# cannot use the default ProactorEventLoop.
+ensure_selector_event_loop()
+
 import os
 
 from fastapi import APIRouter, FastAPI
@@ -7,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.features.auth import router as auth
 from app.features.rooms import router as rooms
 from app.shared import health
+from app.shared.asyncio_policy import ensure_selector_event_loop
 from app.shared.config import get_settings
 from app.shared.errors import register_handlers
 from app.shared.logging import configure_logging

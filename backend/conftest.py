@@ -4,6 +4,12 @@ Pytest configuration and shared fixtures.
 import pytest
 import os
 
+from app.shared.asyncio_policy import ensure_selector_event_loop
+
+# psycopg (async) cannot use ProactorEventLoop on Windows; pytest-asyncio
+# creates loops after this import, so the policy is effective for tests too.
+ensure_selector_event_loop()
+
 # Ensure .env is loaded for tests
 @pytest.fixture(scope="session", autouse=True)
 def load_test_env():
