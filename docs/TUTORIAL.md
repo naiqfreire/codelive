@@ -80,6 +80,14 @@ so you always run the project's own Python with its own packages.
 - `requirements-dev.txt` — extra packages needed only to run the tests.
 
 This downloads everything from PyPI. The first time it can take a minute.
+Then verify both servers are installed:
+
+```bash
+.venv/bin/python -m pip show alembic uvicorn
+```
+
+You should see both packages listed. If either is missing, the install did not
+complete — re-run it before continuing.
 
 ---
 
@@ -141,7 +149,7 @@ docker compose down
 The schema is managed by **Alembic** (the migration tool). Run the migrations:
 
 ```bash
-cd backend && ../.venv/bin/alembic upgrade head
+cd backend && ../.venv/bin/python -m alembic upgrade head
 ```
 
 Go back to the project root afterwards:
@@ -158,7 +166,7 @@ tells you the real cause (database not running, wrong `.env`, etc.).
 ## Step 6 — Run the app
 
 ```bash
-cd backend && ../.venv/bin/uvicorn app.main:app --reload --no-access-log
+cd backend && ../.venv/bin/python -m uvicorn app.main:app --reload --no-access-log
 ```
 
 - `uvicorn` is the web server that runs the app.
@@ -239,3 +247,4 @@ Every error response looks like this:
 | Health check returns `db: unavailable` | Database down | `docker compose up -d --wait` (step 4) |
 | You log in but immediately log out | Wrong host | Use `http://localhost:8000`, not a LAN IP (cookie is `Secure`) |
 | `pip: command not found` | venv created without pip | Follow step 1's `get-pip.py` bootstrap |
+| `No module named 'alembic'` | Dependencies not installed | Re-run step 2 and verify with `-m pip show alembic uvicorn` |

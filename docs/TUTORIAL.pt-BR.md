@@ -81,6 +81,14 @@ assim você sempre roda o Python do projeto, com os pacotes do projeto.
 - `requirements-dev.txt` — pacotes extras necessários apenas para os testes.
 
 Isso baixa tudo do PyPI. Na primeira vez pode levar um minuto.
+Em seguida, verifique se os dois servidores foram instalados:
+
+```bash
+.venv/bin/python -m pip show alembic uvicorn
+```
+
+Você deve ver os dois pacotes listados. Se algum estiver faltando, a
+instalação não foi concluída — rode novamente antes de continuar.
 
 ---
 
@@ -143,7 +151,7 @@ O esquema é gerenciado pelo **Alembic** (a ferramenta de migrações). Rode as
 migrações:
 
 ```bash
-cd backend && ../.venv/bin/alembic upgrade head
+cd backend && ../.venv/bin/python -m alembic upgrade head
 ```
 
 Volte para a raiz do projeto depois:
@@ -160,7 +168,7 @@ geralmente mostra a causa real (banco parado, `.env` errado etc.).
 ## Passo 6 — Rodar o app
 
 ```bash
-cd backend && ../.venv/bin/uvicorn app.main:app --reload --no-access-log
+cd backend && ../.venv/bin/python -m uvicorn app.main:app --reload --no-access-log
 ```
 
 - `uvicorn` é o servidor web que roda o app.
@@ -242,3 +250,4 @@ Toda resposta de erro tem este formato:
 | Health check retorna `db: unavailable` | Banco parado | `docker compose up -d --wait` (passo 4) |
 | Você loga e cai na hora | Host errado | Use `http://localhost:8000`, não IP da rede local (cookie é `Secure`) |
 | `pip: command not found` | venv criado sem pip | Siga o bootstrap com `get-pip.py` do passo 1 |
+| `No module named 'alembic'` | Dependências não instaladas | Rode novamente o passo 2 e verifique com `-m pip show alembic uvicorn` |
