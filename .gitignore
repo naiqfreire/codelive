@@ -26,6 +26,7 @@ venv/
 # Node / Vite
 node_modules/
 dist/
+.vite/
 
 # Logs and coverage
 *.log
