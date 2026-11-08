@@ -1,6 +1,14 @@
 import asyncio
 from logging.config import fileConfig
 
+from dotenv import find_dotenv, load_dotenv
+
+# The app reads its config from the project .env (pydantic-settings); load it
+# here too so `alembic upgrade head` works without exporting DATABASE_URL
+# into the shell. A real environment variable always wins over the file,
+# because load_dotenv does not override existing values.
+load_dotenv(find_dotenv(usecwd=True))
+
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
