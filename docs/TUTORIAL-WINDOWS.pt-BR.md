@@ -31,13 +31,11 @@ nativa (no PowerShell ou CMD), sem WSL.
    Os comandos abaixo assumem que você está na raiz do projeto (onde fica o
    `README.md`). Abra o **PowerShell** nessa pasta.
 
-> **Observação:** no Windows, todo comando Python usa `.venv\Scripts\python.exe`
-> em vez do `.venv/bin/python` do Linux/macOS. Neste guia esse programa é
-> escrito como `$py` por brevidade — defina-o uma vez:
-
-```powershell
-$py = ".\.venv\Scripts\python.exe"
-```
+> **Observação:** no Windows, todo comando Python usa o Python do projeto,
+> `.venv\Scripts\python.exe`. Os comandos deste guia chamam-no diretamente —
+> sem ativação e sem scripts lançadores (`alembic.exe`, `uvicorn.exe`),
+> porque tudo é invocado como `python -m ...`. Os passos 5 e 6 rodam de
+> dentro de `backend/`, então lá o caminho é `..\.venv\Scripts\python.exe`.
 
 ---
 
@@ -45,7 +43,7 @@ $py = ".\.venv\Scripts\python.exe"
 
 ```powershell
 py -3.14 -m venv .venv
-& $py -m pip --version
+& .\.venv\Scripts\python.exe -m pip --version
 ```
 
 Você deve ver `pip 26.x ...`.
@@ -55,7 +53,7 @@ bootstrap do pip, exatamente como no README principal:
 
 ```powershell
 Invoke-WebRequest -Uri https://bootstrap.pypa.io/get-pip.py -OutFile $env:TEMP\get-pip.py
-& $py $env:TEMP\get-pip.py
+& .\.venv\Scripts\python.exe $env:TEMP\get-pip.py
 ```
 
 )
@@ -65,8 +63,12 @@ Invoke-WebRequest -Uri https://bootstrap.pypa.io/get-pip.py -OutFile $env:TEMP\g
 ## Passo 2 — Instalar as dependências
 
 ```powershell
-& $py -m pip install -r requirements.txt -r requirements-dev.txt
+& .\.venv\Scripts\python.exe -m pip install -r requirements.txt -r requirements-dev.txt
+& .\.venv\Scripts\python.exe -m pip show alembic uvicorn
 ```
+
+Você deve ver os dois pacotes listados. Se algum estiver faltando, a
+instalação não foi concluída — rode novamente antes de continuar.
 
 ---
 
@@ -107,7 +109,7 @@ Para parar depois: `docker compose down`.
 
 ```powershell
 cd backend
-& ..\.venv\Scripts\alembic.exe upgrade head
+& ..\.venv\Scripts\python.exe -m alembic upgrade head
 cd ..
 ```
 
@@ -117,7 +119,7 @@ cd ..
 
 ```powershell
 cd backend
-& ..\.venv\Scripts\uvicorn.exe app.main:app --reload --no-access-log
+& ..\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --no-access-log
 ```
 
 Abra <http://localhost:8000/docs> no navegador. Verifique:
@@ -137,8 +139,8 @@ Esperado: `{"status": "ok", "db": "ok"}`. Para parar, `Ctrl+C`.
 ## Passo 7 — Rodar os testes
 
 ```powershell
-& $py -m pytest backend/app/features -q
-& $py -m pytest backend/tests/integration -q
+& .\.venv\Scripts\python.exe -m pytest backend/app/features -q
+& .\.venv\Scripts\python.exe -m pytest backend/tests/integration -q
 ```
 
 Ambos devem terminar com `passed`.
@@ -155,5 +157,20 @@ Ambos devem terminar com `passed`.
 | `cd backend && cmd`                     | `cd backend` e depois `cmd` (ou `;`)                 |
 | `curl http://localhost:8000/api/health` | `Invoke-RestMethod http://localhost:8000/api/health` |
 | `docker compose up -d --wait`           | _(igual)_                                            |
+| `alembic upgrade head`                  | `& ..\.venv\Scripts\python.exe -m alembic upgrade head` (de `backend/`) |
+| `uvicorn app.main:app ...`              | `& ..\.venv\Scripts\python.exe -m uvicorn app.main:app ...` (de `backend/`) |
 
 Veja `docs/TUTORIAL-WINDOWS.md` para o mesmo guia em inglês.
+
+---
+
+## Resolução de problemas
+
+| Sintoma | Causa provável | Correção |
+| ------- | -------------- | -------- |
+| `docker: command not found` | Docker não instalado/iniciado | Instale e inicie o Docker Desktop |
+| `No module named 'alembic'` | Dependências não instaladas | Rode novamente o passo 2 e verifique com `-m pip show alembic uvicorn` |
+| `ModuleNotFoundError: No module named 'app'` | Diretório errado | Rode os testes a partir da raiz; o servidor a partir de `backend/` |
+| Health check retorna `db: unavailable` | Banco parado | `docker compose up -d --wait` (passo 4) |
+| Você loga e cai na hora | Host errado | Use `http://localhost:8000`, não IP da rede local (cookie é `Secure`) |
+| `pip: command not found` | venv criado sem pip | Siga o bootstrap com `get-pip.py` do passo 1 |

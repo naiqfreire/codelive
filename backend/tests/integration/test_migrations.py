@@ -46,6 +46,24 @@ def _alembic(*args, url):
     )
 
 
+async def test_upgrade_head_reads_database_url_from_dotenv(scratch_url, tmp_path):
+    """Regression: alembic must find DATABASE_URL in a .env even when the
+    process environment does not export it (tutorial flow)."""
+    (tmp_path / ".env").write_text(f"DATABASE_URL={scratch_url}\n")
+    env = {k: v for k, v in os.environ.items() if k != "DATABASE_URL"}
+    env["PYTHONPATH"] = str(REPO_ROOT / "backend")
+    result = subprocess.run(
+        [sys.executable, "-m", "alembic", "-c", str(REPO_ROOT / "backend" / "alembic.ini"), "upgrade", "head"],
+        cwd=str(tmp_path),
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    tables = await _table_names(scratch_url)
+    assert {"users", "rooms", "room_members"} <= tables
+
+
 async def _table_names(url):
     engine = create_async_engine(url, isolation_level="AUTOCOMMIT")
     try:

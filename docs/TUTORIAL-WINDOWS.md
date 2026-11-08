@@ -31,13 +31,11 @@ Follow this guide if you are on **Windows** and want to run CodeLive natively
    The commands below assume you are in the project root (where `README.md`
    lives). Open **PowerShell** in that folder.
 
-> **Note:** on Windows, every Python command uses `.venv\Scripts\python.exe`
-> instead of the Linux/macOS `.venv/bin/python`. In this guide that program
-> is written as `$py` for brevity — set it once:
-
-```powershell
-$py = ".\.venv\Scripts\python.exe"
-```
+> **Note:** on Windows, every Python command uses the project's own Python,
+> `.venv\Scripts\python.exe`. The commands in this guide call it directly —
+> no activation and no launcher scripts (`alembic.exe`, `uvicorn.exe`) needed,
+> because everything is invoked as `python -m ...`. Steps 5 and 6 run from
+> inside `backend/`, so there the path is `..\.venv\Scripts\python.exe`.
 
 ---
 
@@ -45,7 +43,7 @@ $py = ".\.venv\Scripts\python.exe"
 
 ```powershell
 py -3.14 -m venv .venv
-& $py -m pip --version
+& .\.venv\Scripts\python.exe -m pip --version
 ```
 
 You should see `pip 26.x ...`.
@@ -55,7 +53,7 @@ bootstrap pip, exactly as in the main README:
 
 ```powershell
 Invoke-WebRequest -Uri https://bootstrap.pypa.io/get-pip.py -OutFile $env:TEMP\get-pip.py
-& $py $env:TEMP\get-pip.py
+& .\.venv\Scripts\python.exe $env:TEMP\get-pip.py
 ```
 
 )
@@ -65,8 +63,12 @@ Invoke-WebRequest -Uri https://bootstrap.pypa.io/get-pip.py -OutFile $env:TEMP\g
 ## Step 2 — Install dependencies
 
 ```powershell
-& $py -m pip install -r requirements.txt -r requirements-dev.txt
+& .\.venv\Scripts\python.exe -m pip install -r requirements.txt -r requirements-dev.txt
+& .\.venv\Scripts\python.exe -m pip show alembic uvicorn
 ```
+
+You should see both packages listed. If either is missing, the install did not
+complete — re-run it before continuing.
 
 ---
 
@@ -106,7 +108,7 @@ Stop them later with `docker compose down`.
 
 ```powershell
 cd backend
-& ..\.venv\Scripts\alembic.exe upgrade head
+& ..\.venv\Scripts\python.exe -m alembic upgrade head
 cd ..
 ```
 
@@ -116,7 +118,7 @@ cd ..
 
 ```powershell
 cd backend
-& ..\.venv\Scripts\uvicorn.exe app.main:app --reload --no-access-log
+& ..\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --no-access-log
 ```
 
 Open <http://localhost:8000/docs> in your browser. Verify:
@@ -136,8 +138,8 @@ Expected: `{"status": "ok", "db": "ok"}`. Stop with `Ctrl+C`.
 ## Step 7 — Run the tests
 
 ```powershell
-& $py -m pytest backend/app/features -q
-& $py -m pytest backend/tests/integration -q
+& .\.venv\Scripts\python.exe -m pytest backend/app/features -q
+& .\.venv\Scripts\python.exe -m pytest backend/tests/integration -q
 ```
 
 Both should end with `passed`.
@@ -154,5 +156,20 @@ Both should end with `passed`.
 | `cd backend && cmd`                     | `cd backend` then `cmd` (or `;`)                     |
 | `curl http://localhost:8000/api/health` | `Invoke-RestMethod http://localhost:8000/api/health` |
 | `docker compose up -d --wait`           | _(unchanged)_                                        |
+| `alembic upgrade head`                  | `& ..\.venv\Scripts\python.exe -m alembic upgrade head` (from `backend/`) |
+| `uvicorn app.main:app ...`              | `& ..\.venv\Scripts\python.exe -m uvicorn app.main:app ...` (from `backend/`) |
 
 See `docs/TUTORIAL-WINDOWS.pt-BR.md` for the same guide in Portuguese.
+
+---
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+| ------- | ------------ | --- |
+| `docker: command not found` | Docker not installed/started | Install and start Docker Desktop |
+| `No module named 'alembic'` | Dependencies not installed | Re-run step 2 and verify with `-m pip show alembic uvicorn` |
+| `ModuleNotFoundError: No module named 'app'` | Wrong directory | Run tests from the project root, or the server from `backend/` |
+| Health check returns `db: unavailable` | Database down | `docker compose up -d --wait` (step 4) |
+| You log in but immediately log out | Wrong host | Use `http://localhost:8000`, not a LAN IP (cookie is `Secure`) |
+| `pip: command not found` | venv created without pip | Follow step 1's `get-pip.py` bootstrap |

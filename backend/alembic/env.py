@@ -1,6 +1,14 @@
 import asyncio
 from logging.config import fileConfig
 
+from dotenv import find_dotenv, load_dotenv
+
+# The app reads its config from the project .env (pydantic-settings); load it
+# here too so `alembic upgrade head` works without exporting DATABASE_URL
+# into the shell. A real environment variable always wins over the file,
+# because load_dotenv does not override existing values.
+load_dotenv(find_dotenv(usecwd=True))
+
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
@@ -18,6 +26,7 @@ if config.config_file_name is not None:
 
 import os
 
+from app.shared.asyncio_policy import ensure_selector_event_loop
 from app.shared.database import Base
 from app.features.auth import models  # noqa: F401
 from app.features.rooms import models  # noqa: F401
@@ -85,6 +94,7 @@ async def run_async_migrations() -> None:
 
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode."""
+    ensure_selector_event_loop()
 
     asyncio.run(run_async_migrations())
 
