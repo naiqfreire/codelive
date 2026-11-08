@@ -173,12 +173,11 @@ Backend:
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload
-pytest backend/app/features
-pytest backend/tests/integration
-alembic upgrade head
+.venv/bin/python -m pip install -r requirements.txt -r requirements-dev.txt
+.venv/bin/python -m uvicorn app.main:app --reload
+.venv/bin/python -m pytest backend/app/features
+.venv/bin/python -m pytest backend/tests/integration
+.venv/bin/python -m alembic upgrade head
 ```
 
 Frontend:
