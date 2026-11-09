@@ -142,6 +142,16 @@ async def client(test_engine):
 
 
 @pytest.fixture(autouse=True)
+def _clear_rooms_cache():
+    """Isolate tests: drop cached rooms:mine entries before and after each test."""
+    from app.features.rooms import cache
+
+    cache.clear_rooms_cache()
+    yield
+    cache.clear_rooms_cache()
+
+
+@pytest.fixture(autouse=True)
 async def _clean_tables(test_engine):
     """Isolate tests: empty the users table before each test.
 
