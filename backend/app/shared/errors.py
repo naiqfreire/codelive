@@ -13,6 +13,8 @@ class ErrorCode:
     FORBIDDEN = "forbidden"
     INVALID_ORIGIN = "invalid_origin"
     INTERNAL_ERROR = "internal_error"
+    ROOM_NOT_FOUND = "room_not_found"
+    ROOM_CLOSED = "room_closed"
 
 
 ERROR_MESSAGES: dict[str, str] = {
@@ -23,6 +25,8 @@ ERROR_MESSAGES: dict[str, str] = {
     ErrorCode.FORBIDDEN: "Acesso negado.",
     ErrorCode.INVALID_ORIGIN: "Origem não permitida.",
     ErrorCode.INTERNAL_ERROR: "Erro interno do servidor.",
+    ErrorCode.ROOM_NOT_FOUND: "Sala não encontrada.",
+    ErrorCode.ROOM_CLOSED: "Sala encerrada.",
 }
 
 _PORTUGUESE_REASONS = {
