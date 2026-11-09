@@ -43,3 +43,14 @@ async def close_room(
     room = await service.close_room(session, room_id, user)
     log.info("room_closed", room_id=str(room.id), user_id=str(user.id))
     return room
+
+
+@router.post("/{room_id}/regenerate-code", response_model=RoomOut)
+async def regenerate_room_code(
+    room_id: uuid.UUID,
+    user=Depends(require_authenticated),
+    session: AsyncSession = Depends(get_session),
+):
+    room = await service.regenerate_room_code(session, room_id, user)
+    log.info("room_code_regenerated", room_id=str(room.id), user_id=str(user.id))
+    return room

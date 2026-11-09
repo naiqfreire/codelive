@@ -98,3 +98,28 @@ async def close_room(session: AsyncSession, room_id, user) -> Room:
         await session.commit()
     cache.invalidate_rooms_mine(str(user.id))
     return room
+
+
+async def regenerate_room_code(session: AsyncSession, room_id, user) -> Room:
+    room = await _get_owned_room(session, room_id, user)
+    if room.status == "closed":
+        raise HTTPException(status_code=409, detail=ErrorCode.ROOM_CLOSED)
+    for attempt in range(1, MAX_CODE_ATTEMPTS + 1):
+        code = generate_access_code()
+        if await _code_taken(session, code):
+            log.info("access_code_collision", attempt=attempt)
+            continue
+        try:
+            async with session.begin_nested():
+                room.access_code = code
+                await session.flush()
+        except IntegrityError as exc:
+            if _is_code_collision(exc):
+                log.info("access_code_collision", attempt=attempt)
+                continue
+            raise
+        await session.commit()
+        cache.invalidate_rooms_mine(str(user.id))
+        return room
+    log.error("access_code_exhausted", attempts=MAX_CODE_ATTEMPTS)
+    raise HTTPException(status_code=500, detail=ErrorCode.INTERNAL_ERROR)
