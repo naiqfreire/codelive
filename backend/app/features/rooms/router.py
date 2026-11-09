@@ -22,3 +22,11 @@ async def create_room(
     room = await service.create_room(session, user, data.language)
     log.info("room_created", room_id=str(room.id), user_id=str(user.id), language=data.language)
     return room
+
+
+@router.get("/mine", response_model=list[RoomOut])
+async def list_my_rooms(
+    user=Depends(require_authenticated),
+    session: AsyncSession = Depends(get_session),
+):
+    return await service.list_rooms_for_owner(session, user)

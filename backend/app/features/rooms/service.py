@@ -1,4 +1,4 @@
-"""Rooms business logic: access-code generation and room creation."""
+"""Rooms business logic: access-code generation and room management."""
 import secrets
 
 import structlog
@@ -8,7 +8,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.features.membership import public as membership
+from app.features.rooms import cache
 from app.features.rooms.models import Room
+from app.features.rooms.schemas import RoomOut
 from app.shared.errors import ErrorCode
 
 log = structlog.get_logger()
@@ -22,14 +24,23 @@ def generate_access_code() -> str:
     return "".join(secrets.choice(ACCESS_CODE_ALPHABET) for _ in range(ACCESS_CODE_LENGTH))
 
 
+async def _code_taken(session: AsyncSession, code: str) -> bool:
+    already_exists = (
+        await session.execute(select(exists().where(Room.access_code == code)))
+    ).scalar()
+    return bool(already_exists)
+
+
+def _is_code_collision(exc: IntegrityError) -> bool:
+    constraint = getattr(getattr(exc, "orig", None), "diag", None)
+    name = getattr(constraint, "constraint_name", None) if constraint else None
+    return name == "uq_rooms_access_code"
+
+
 async def create_room(session: AsyncSession, owner, language: str) -> Room:
     for attempt in range(1, MAX_CODE_ATTEMPTS + 1):
         code = generate_access_code()
-        already_exists = (
-            await session.execute(select(exists().where(Room.access_code == code)))
-        ).scalar()
-        # .scalar() on exists() returns bool-ish; coerce
-        if bool(already_exists):
+        if await _code_taken(session, code):
             log.info("access_code_collision", attempt=attempt)
             continue
         room = Room(owner_id=owner.id, access_code=code, language=language)
@@ -38,14 +49,34 @@ async def create_room(session: AsyncSession, owner, language: str) -> Room:
                 session.add(room)
                 await session.flush()
         except IntegrityError as exc:
-            constraint = getattr(getattr(exc, "orig", None), "diag", None)
-            name = getattr(constraint, "constraint_name", None) if constraint else None
-            if name == "uq_rooms_access_code":
+            if _is_code_collision(exc):
                 log.info("access_code_collision", attempt=attempt)
                 continue
             raise
         membership.create_owner_member(session, room.id, owner.id)
         await session.commit()
+        cache.invalidate_rooms_mine(str(owner.id))
         return room
     log.error("access_code_exhausted", attempts=MAX_CODE_ATTEMPTS)
     raise HTTPException(status_code=500, detail=ErrorCode.INTERNAL_ERROR)
+
+
+async def list_rooms_for_owner(session: AsyncSession, owner):
+    user_key = str(owner.id)
+    cached = cache.get_cached_rooms_mine(user_key)
+    if cached is not None:
+        return cached
+    rows = (
+        (
+            await session.execute(
+                select(Room)
+                .where(Room.owner_id == owner.id)
+                .order_by(Room.created_at.desc(), Room.id.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    payload = [RoomOut.model_validate(room).model_dump(mode="json") for room in rows]
+    cache.set_cached_rooms_mine(user_key, payload)
+    return payload
