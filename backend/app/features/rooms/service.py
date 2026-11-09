@@ -80,3 +80,21 @@ async def list_rooms_for_owner(session: AsyncSession, owner):
     payload = [RoomOut.model_validate(room).model_dump(mode="json") for room in rows]
     cache.set_cached_rooms_mine(user_key, payload)
     return payload
+
+
+async def _get_owned_room(session: AsyncSession, room_id, user) -> Room:
+    room = await session.get(Room, room_id)
+    if room is None:
+        raise HTTPException(status_code=404, detail=ErrorCode.ROOM_NOT_FOUND)
+    if room.owner_id != user.id:
+        raise HTTPException(status_code=403, detail=ErrorCode.FORBIDDEN)
+    return room
+
+
+async def close_room(session: AsyncSession, room_id, user) -> Room:
+    room = await _get_owned_room(session, room_id, user)
+    if room.status != "closed":
+        room.status = "closed"
+        await session.commit()
+    cache.invalidate_rooms_mine(str(user.id))
+    return room

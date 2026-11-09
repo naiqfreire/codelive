@@ -1,4 +1,6 @@
 """Rooms HTTP routes."""
+import uuid
+
 import structlog
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,3 +32,14 @@ async def list_my_rooms(
     session: AsyncSession = Depends(get_session),
 ):
     return await service.list_rooms_for_owner(session, user)
+
+
+@router.patch("/{room_id}/close", response_model=RoomOut)
+async def close_room(
+    room_id: uuid.UUID,
+    user=Depends(require_authenticated),
+    session: AsyncSession = Depends(get_session),
+):
+    room = await service.close_room(session, room_id, user)
+    log.info("room_closed", room_id=str(room.id), user_id=str(user.id))
+    return room
