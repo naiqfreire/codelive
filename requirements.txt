@@ -1,5 +1,5 @@
 # Runtime dependencies — exact pins (D-23, authorized 2026-11-05)
-# Every name below appears verbatim in AGENTS.md "Backend dependencies (authorized 2026-11-05)".
+# Every name below appears verbatim in AGENTS.md "Backend dependencies".
 # Do NOT add packages outside that list. Do NOT remove the pin on starlette/sqlalchemy/fastapi.
 fastapi==0.162.0
 starlette==1.10.0
@@ -14,3 +14,5 @@ itsdangerous==2.2.0
 structlog==26.1.0
 email-validator==2.3.0
 python-dotenv==1.2.4
+# Cache em memória (SPEC §10) — autorizado 2026-11-09, task #16
+cachetools==8.0.0
