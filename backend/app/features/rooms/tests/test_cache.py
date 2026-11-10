@@ -14,6 +14,30 @@ def test_get_returns_none_when_missing():
     assert cache.get_cached_rooms_mine("user-1") is None
 
 
+def test_get_cached_rooms_joined_returns_none_when_missing():
+    assert cache.get_cached_rooms_joined("user-1") is None
+
+
+def test_set_then_get_roundtrip_joined():
+    payload = [{"room_id": "1", "user_id": "u-1", "role": "viewer"}]
+    cache.set_cached_rooms_joined("user-1", payload)
+    assert cache.get_cached_rooms_joined("user-1") == payload
+
+
+def test_invalidate_rooms_joined_removes_only_target_key():
+    cache.set_cached_rooms_joined("user-1", [{"room_id": "1"}])
+    cache.set_cached_rooms_joined("user-2", [{"room_id": "2"}])
+    cache.invalidate_rooms_joined("user-1")
+    assert cache.get_cached_rooms_joined("user-1") is None
+    assert cache.get_cached_rooms_joined("user-2") == [{"room_id": "2"}]
+
+
+def test_clear_removes_joined_keys():
+    cache.set_cached_rooms_joined("user-1", [{"room_id": "1"}])
+    cache.clear_rooms_cache()
+    assert cache.get_cached_rooms_joined("user-1") is None
+
+
 def test_set_then_get_roundtrip():
     payload = [{"id": "1", "access_code": "ABC123"}]
     cache.set_cached_rooms_mine("user-1", payload)
@@ -31,6 +55,8 @@ def test_invalidate_removes_only_target_key():
 def test_clear_removes_everything():
     cache.set_cached_rooms_mine("user-1", [{"id": "1"}])
     cache.set_cached_rooms_mine("user-2", [{"id": "2"}])
+    cache.set_cached_rooms_joined("user-1", [{"room_id": "1"}])
     cache.clear_rooms_cache()
     assert cache.get_cached_rooms_mine("user-1") is None
     assert cache.get_cached_rooms_mine("user-2") is None
+    assert cache.get_cached_rooms_joined("user-1") is None

@@ -8,7 +8,12 @@ from app.features.membership.models import RoomMember
 
 def test_public_surface_is_exact():
     public = __import__("app.features.membership.public", fromlist=["x"])
-    assert public.__all__ == ["RoomMember", "create_owner_member"]
+    assert public.__all__ == [
+        "RoomMember",
+        "create_member",
+        "create_owner_member",
+        "list_memberships_for_user",
+    ]
 
 
 def test_create_owner_member_is_sync_and_commit_free():
@@ -39,6 +44,30 @@ def test_create_owner_member_adds_owner_row():
     assert member.role == "owner"
     assert member.is_anonymous is False
     assert member.nickname is None
+
+
+def test_create_member_writes_viewer_row_with_nickname():
+    from app.features.membership.public import create_member
+
+    class _Session:
+        def add(self, obj):
+            pass
+
+    room_id = uuid.uuid7()
+    user_id = uuid.uuid7()
+    member = create_member(_Session(), room_id, user_id, role="viewer", nickname="Espectador")
+    assert member.role == "viewer"
+    assert member.nickname == "Espectador"
+    assert member.is_anonymous is False
+
+
+def test_list_memberships_for_user_is_async_and_query_only():
+    from app.features.membership import public
+
+    assert inspect.iscoroutinefunction(public.list_memberships_for_user) is True
+    source = inspect.getsource(public)
+    assert ".commit(" not in source
+    assert ".rollback(" not in source
 
 
 def test_membership_does_not_import_other_slices():
