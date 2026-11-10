@@ -7,7 +7,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.features.auth.public import require_authenticated
 from app.features.rooms import service
-from app.features.rooms.schemas import CreateRoomRequest, RoomOut
+from app.features.rooms.schemas import (
+    ByCodeResponse,
+    CreateRoomRequest,
+    JoinRequest,
+    ListJoinedResponse,
+    RoomOut,
+)
 from app.shared.database import get_session
 
 log = structlog.get_logger()
@@ -34,6 +40,25 @@ async def list_my_rooms(
     return await service.list_rooms_for_owner(session, user)
 
 
+@router.get("/by-code/{codigo}", response_model=ByCodeResponse)
+async def get_room_by_code(
+    codigo: str,
+    user=Depends(require_authenticated),
+    session: AsyncSession = Depends(get_session),
+):
+    room = await service.get_room_by_code(session, codigo)
+    log.info("room_by_code_lookup", room_id=str(room.id), user_id=str(user.id))
+    return room
+
+
+@router.get("/joined", response_model=ListJoinedResponse)
+async def list_joined_rooms(
+    user=Depends(require_authenticated),
+    session: AsyncSession = Depends(get_session),
+):
+    return await service.list_rooms_joined(session, user)
+
+
 @router.patch("/{room_id}/close", response_model=RoomOut)
 async def close_room(
     room_id: uuid.UUID,
@@ -53,4 +78,18 @@ async def regenerate_room_code(
 ):
     room = await service.regenerate_room_code(session, room_id, user)
     log.info("room_code_regenerated", room_id=str(room.id), user_id=str(user.id))
+    return room
+
+
+@router.post("/{room_id}/join", status_code=200, response_model=RoomOut)
+async def join_room(
+    room_id: uuid.UUID,
+    data: JoinRequest,
+    user=Depends(require_authenticated),
+    session: AsyncSession = Depends(get_session),
+):
+    room = await service.join_room(
+        session, room_id, user, data.code, data.anonymous, data.nickname
+    )
+    log.info("room_joined", room_id=str(room.id), user_id=str(user.id))
     return room
