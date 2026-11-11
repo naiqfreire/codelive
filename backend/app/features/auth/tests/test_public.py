@@ -47,6 +47,15 @@ def test_require_authenticated_is_get_current_user_alias():
     assert require_authenticated is get_current_user
 
 
+def test_get_current_user_optional_is_exported_and_async():
+    import inspect
+
+    from app.features.auth import public
+
+    assert "get_current_user_optional" in public.__all__
+    assert inspect.iscoroutinefunction(public.get_current_user_optional)
+
+
 def test_protected_router_wiring():
     deps = protected_router.dependencies
     assert any(

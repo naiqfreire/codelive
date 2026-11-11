@@ -50,6 +50,17 @@ async def _member_rows(db_session, room_id):
     return result.all()
 
 
+async def _anon_rows(db_session, room_id):
+    result = await db_session.execute(
+        text(
+            "SELECT role, is_anonymous, nickname, user_id, anonymous_session_id "
+            "FROM room_members WHERE room_id = :room AND is_anonymous = true"
+        ),
+        {"room": room_id},
+    )
+    return result.all()
+
+
 async def _make_room_and_viewer(client):
     """Owner creates a room; client then registers as a viewer."""
     await _register(client, "join-owner@example.com", "Owner")
@@ -59,6 +70,12 @@ async def _make_room_and_viewer(client):
     me = await client.get("/api/auth/me")
     assert me.status_code == 200
     return room, me.json()["id"]
+
+
+async def _make_room(client):
+    """Owner creates a room; no viewer session is left on the client."""
+    await _register(client, "anon-owner@example.com", "Owner")
+    return await _create_room(client)
 
 
 async def test_join_viewer_creates_membership_and_returns_room(client, db_session):
@@ -159,16 +176,133 @@ async def test_join_without_session_is_401(client):
     assert resp.json()["error"]["code"] == "not_authenticated"
 
 
-async def test_join_anonymous_flag_is_rejected_until_us3(client, db_session):
-    room, viewer_id = await _make_room_and_viewer(client)
+async def test_join_anonymous_creates_membership_and_sets_cookie(client, db_session):
+    room = await _make_room(client)
+    client.cookies.clear()
+
     resp = await client.post(
         f"/api/rooms/{room['id']}/join",
-        json={"code": room["access_code"], "anonymous": True, "nickname": "Anon"},
+        json={"code": room["access_code"], "anonymous": True, "nickname": "Anônimo"},
+    )
+    assert resp.status_code == 200
+    assert resp.cookies.get("codelive_anon")
+    assert "password_hash" not in resp.text
+    rows = await _anon_rows(db_session, room["id"])
+    assert len(rows) == 1
+    role, is_anonymous, nickname, user_id, anonymous_session_id = rows[0]
+    assert role == "viewer"
+    assert is_anonymous is True
+    assert nickname == "Anônimo"
+    assert user_id is None
+    assert anonymous_session_id
+
+
+async def test_join_anonymous_rejoin_with_same_cookie_is_idempotent(client, db_session):
+    room = await _make_room(client)
+    client.cookies.clear()
+
+    first = await client.post(
+        f"/api/rooms/{room['id']}/join",
+        json={"code": room["access_code"], "anonymous": True, "nickname": "Anônimo"},
+    )
+    assert first.status_code == 200
+    second = await client.post(
+        f"/api/rooms/{room['id']}/join",
+        json={"code": room["access_code"], "anonymous": True, "nickname": "Anônimo"},
+    )
+    assert second.status_code == 200
+    rows = await _anon_rows(db_session, room["id"])
+    assert len(rows) == 1
+
+
+async def test_join_anonymous_new_session_after_cookie_clear(client, db_session):
+    room = await _make_room(client)
+    client.cookies.clear()
+
+    first = await client.post(
+        f"/api/rooms/{room['id']}/join",
+        json={"code": room["access_code"], "anonymous": True, "nickname": "Anônimo"},
+    )
+    assert first.status_code == 200
+    client.cookies.clear()
+    second = await client.post(
+        f"/api/rooms/{room['id']}/join",
+        json={"code": room["access_code"], "anonymous": True, "nickname": "Anônimo"},
+    )
+    assert second.status_code == 200
+    rows = await _anon_rows(db_session, room["id"])
+    assert len(rows) == 2
+    assert rows[0][4] != rows[1][4]
+
+
+async def test_join_anonymous_without_nickname_returns_422(client, db_session):
+    room = await _make_room(client)
+    client.cookies.clear()
+
+    resp = await client.post(
+        f"/api/rooms/{room['id']}/join",
+        json={"code": room["access_code"], "anonymous": True},
     )
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "validation_error"
-    rows = await _member_rows(db_session, room["id"])
-    assert all(str(r[3]) != viewer_id for r in rows)
+    assert await _anon_rows(db_session, room["id"]) == []
+
+
+async def test_join_anonymous_blank_nickname_returns_422(client, db_session):
+    room = await _make_room(client)
+    client.cookies.clear()
+
+    resp = await client.post(
+        f"/api/rooms/{room['id']}/join",
+        json={"code": room["access_code"], "anonymous": True, "nickname": "   "},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "validation_error"
+    assert await _anon_rows(db_session, room["id"]) == []
+
+
+async def test_join_anonymous_wrong_code_returns_404_and_no_row(client, db_session):
+    room = await _make_room(client)
+    client.cookies.clear()
+
+    resp = await client.post(
+        f"/api/rooms/{room['id']}/join",
+        json={"code": _wrong_code(room["access_code"]), "anonymous": True, "nickname": "Anônimo"},
+    )
+    assert resp.status_code == 404
+    assert resp.json()["error"]["code"] == "room_not_found"
+    assert await _anon_rows(db_session, room["id"]) == []
+
+
+async def test_join_anonymous_closed_room_returns_409_and_no_row(client, db_session):
+    room = await _make_room(client)
+    close = await client.patch(f"/api/rooms/{room['id']}/close")
+    assert close.status_code == 200
+    client.cookies.clear()
+
+    resp = await client.post(
+        f"/api/rooms/{room['id']}/join",
+        json={"code": room["access_code"], "anonymous": True, "nickname": "Anônimo"},
+    )
+    assert resp.status_code == 409
+    assert resp.json()["error"]["code"] == "room_closed"
+    assert await _anon_rows(db_session, room["id"]) == []
+
+
+async def test_joined_requires_auth_even_with_anonymous_cookie(client):
+    room = await _make_room(client)
+    client.cookies.clear()
+
+    joined = await client.post(
+        f"/api/rooms/{room['id']}/join",
+        json={"code": room["access_code"], "anonymous": True, "nickname": "Anônimo"},
+    )
+    assert joined.status_code == 200
+    assert joined.cookies.get("codelive_anon")
+
+    resp = await client.get("/api/rooms/joined")
+    assert resp.status_code == 401
+    assert resp.json()["error"]["code"] == "not_authenticated"
 
 
 async def test_join_extra_field_is_422(client):

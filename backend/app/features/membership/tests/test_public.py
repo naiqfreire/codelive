@@ -61,6 +61,35 @@ def test_create_member_writes_viewer_row_with_nickname():
     assert member.is_anonymous is False
 
 
+def test_create_member_writes_anonymous_row():
+    from app.features.membership.public import create_member
+
+    added = []
+
+    class _Session:
+        def add(self, obj):
+            added.append(obj)
+
+    room_id = uuid.uuid7()
+    member = create_member(
+        _Session(),
+        room_id,
+        None,
+        role="viewer",
+        nickname="Anônimo",
+        is_anonymous=True,
+        anonymous_session_id="anon-123",
+    )
+    assert added == [member]
+    assert isinstance(member, RoomMember)
+    assert member.room_id == room_id
+    assert member.user_id is None
+    assert member.anonymous_session_id == "anon-123"
+    assert member.is_anonymous is True
+    assert member.nickname == "Anônimo"
+    assert member.role == "viewer"
+
+
 def test_list_memberships_for_user_is_async_and_query_only():
     from app.features.membership import public
 

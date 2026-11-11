@@ -1,11 +1,13 @@
 """Rooms HTTP routes."""
+import secrets
 import uuid
 
 import structlog
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request, Response
+from itsdangerous import BadSignature, SignatureExpired
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.features.auth.public import require_authenticated
+from app.features.auth.public import get_current_user_optional, require_authenticated
 from app.features.rooms import service
 from app.features.rooms.schemas import (
     ByCodeResponse,
@@ -14,11 +16,19 @@ from app.features.rooms.schemas import (
     ListJoinedResponse,
     RoomOut,
 )
+from app.shared.config import Settings, get_settings
 from app.shared.database import get_session
+from app.shared.security import (
+    ANONYMOUS_COOKIE_NAME,
+    ANONYMOUS_MAX_AGE,
+    issue_anonymous_session,
+    read_anonymous_session,
+)
 
 log = structlog.get_logger()
 
 router = APIRouter(dependencies=[Depends(require_authenticated)])
+public_router = APIRouter()
 
 
 @router.post("", status_code=201, response_model=RoomOut)
@@ -81,15 +91,56 @@ async def regenerate_room_code(
     return room
 
 
-@router.post("/{room_id}/join", status_code=200, response_model=RoomOut)
+@public_router.post("/{room_id}/join", status_code=200, response_model=RoomOut)
 async def join_room(
     room_id: uuid.UUID,
     data: JoinRequest,
-    user=Depends(require_authenticated),
+    request: Request,
+    response: Response,
+    user=Depends(get_current_user_optional),
     session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
 ):
+    secret = settings.SESSION_SECRET.get_secret_value()
+    anonymous_session_id = None
+    is_new_anonymous = False
+
+    if data.anonymous:
+        token = request.cookies.get(ANONYMOUS_COOKIE_NAME)
+        if token:
+            try:
+                anonymous_session_id = read_anonymous_session(secret, token)
+            except (BadSignature, SignatureExpired):
+                anonymous_session_id = None
+        if not anonymous_session_id:
+            anonymous_session_id = secrets.token_urlsafe(32)
+            is_new_anonymous = True
+
     room = await service.join_room(
-        session, room_id, user, data.code, data.anonymous, data.nickname
+        session,
+        room_id,
+        user,
+        data.code,
+        anonymous=data.anonymous,
+        nickname=data.nickname,
+        anonymous_session_id=anonymous_session_id,
     )
-    log.info("room_joined", room_id=str(room.id), user_id=str(user.id))
+
+    if is_new_anonymous and anonymous_session_id:
+        response.set_cookie(
+            ANONYMOUS_COOKIE_NAME,
+            issue_anonymous_session(secret, anonymous_session_id),
+            max_age=ANONYMOUS_MAX_AGE,
+            path="/",
+            secure=True,
+            httponly=True,
+            samesite="lax",
+        )
+
+    log.info(
+        "room_joined",
+        room_id=str(room.id),
+        user_id=str(user.id) if user else None,
+        anonymous=data.anonymous,
+    )
     return room

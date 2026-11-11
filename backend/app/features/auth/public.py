@@ -13,7 +13,44 @@ from app.shared.security import SESSION_COOKIE_NAME, read_session
 
 log = structlog.get_logger()
 
-__all__ = ["get_current_user", "get_user_by_id", "User", "require_authenticated", "require_role"]
+__all__ = [
+    "get_current_user",
+    "get_current_user_optional",
+    "get_user_by_id",
+    "User",
+    "require_authenticated",
+    "require_role",
+]
+
+
+async def _resolve_user(
+    request: Request,
+    session: AsyncSession,
+    settings: Settings,
+    *,
+    log_rejections: bool = True,
+) -> User | None:
+    token = request.cookies.get(SESSION_COOKIE_NAME)
+    if not token:
+        if log_rejections:
+            log.info("auth_rejected", reason="missing")
+        return None
+    try:
+        payload = read_session(settings.SESSION_SECRET.get_secret_value(), token)
+    except SignatureExpired:
+        if log_rejections:
+            log.info("auth_rejected", reason="expired")
+        return None
+    except BadSignature:
+        if log_rejections:
+            log.info("auth_rejected", reason="invalid")
+        return None
+    user = await get_user_by_id(session, payload.get("sub"))
+    if user is None:
+        if log_rejections:
+            log.info("auth_rejected", reason="unknown_user")
+        return None
+    return user
 
 
 async def get_current_user(
@@ -21,23 +58,22 @@ async def get_current_user(
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_settings),
 ) -> User:
-    token = request.cookies.get(SESSION_COOKIE_NAME)
-    if not token:
-        log.info("auth_rejected", reason="missing")
-        raise HTTPException(status_code=401, detail=ErrorCode.NOT_AUTHENTICATED)
-    try:
-        payload = read_session(settings.SESSION_SECRET.get_secret_value(), token)
-    except SignatureExpired:
-        log.info("auth_rejected", reason="expired")
-        raise HTTPException(status_code=401, detail=ErrorCode.NOT_AUTHENTICATED)
-    except BadSignature:
-        log.info("auth_rejected", reason="invalid")
-        raise HTTPException(status_code=401, detail=ErrorCode.NOT_AUTHENTICATED)
-    user = await get_user_by_id(session, payload.get("sub"))
+    user = await _resolve_user(request, session, settings)
     if user is None:
-        log.info("auth_rejected", reason="unknown_user")
         raise HTTPException(status_code=401, detail=ErrorCode.NOT_AUTHENTICATED)
     return user
+
+
+async def get_current_user_optional(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> User | None:
+    """Like get_current_user, but returns None instead of raising 401.
+
+    Used by the spectator join route, where an anonymous visitor is allowed.
+    """
+    return await _resolve_user(request, session, settings, log_rejections=False)
 
 
 require_authenticated = get_current_user
