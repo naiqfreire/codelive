@@ -127,13 +127,13 @@ async def regenerate_room_code(session: AsyncSession, room_id, user) -> Room:
     raise HTTPException(status_code=500, detail=ErrorCode.INTERNAL_ERROR)
 
 
-_MEMBER_COLLISION = "uq_room_members_room_user"
+_MEMBER_COLLISIONS = {"uq_room_members_room_user", "uq_room_members_room_anon"}
 
 
 def _is_member_collision(exc: IntegrityError) -> bool:
     constraint = getattr(getattr(exc, "orig", None), "diag", None)
     name = getattr(constraint, "constraint_name", None) if constraint else None
-    return name == _MEMBER_COLLISION
+    return name in _MEMBER_COLLISIONS
 
 
 async def get_room_by_code(session: AsyncSession, codigo: str) -> Room:
@@ -157,15 +157,16 @@ async def join_room(
     code: str,
     anonymous: bool = False,
     nickname: str | None = None,
+    anonymous_session_id: str | None = None,
 ) -> Room:
     """Make the user a member of the room after validating the access code.
 
-    - owner joining their own room keeps role ``"owner"``.
-    - anyone else joins as role ``"viewer"``.
-    - re-join on the same ``(room, user)`` is idempotent (the unique constraint
-      breach is treated as an existing membership, never an error).
-    - anonymous mode is not yet supported here — the signed anonymous session
-      lives in US3, where this endpoint returns 422 for ``anonymous=True``.
+    - owner joining their own room keeps role ``"owner"``;
+    - anyone else joins as role ``"viewer"``;
+    - anonymous joins have no ``user_id``: the signed anonymous session id is
+      the identity and ``is_anonymous`` is ``True``;
+    - re-join on the same identity is idempotent (the unique constraint breach
+      is treated as an existing membership, never an error).
 
     The caller can derive authorization later via these ``room_members`` rows;
     the service never trusts ``role`` supplied by the client (§8).
@@ -177,31 +178,53 @@ async def join_room(
         raise HTTPException(status_code=404, detail=ErrorCode.ROOM_NOT_FOUND)
     if room.status == "closed":
         raise HTTPException(status_code=409, detail=ErrorCode.ROOM_CLOSED)
-    if anonymous:
-        raise HTTPException(status_code=422, detail=ErrorCode.VALIDATION_ERROR)
 
     normalized_nickname = nickname.strip() if nickname else None
     if normalized_nickname == "":
         normalized_nickname = None
 
-    role = "owner" if room.owner_id == user.id else "viewer"
+    if anonymous:
+        if not normalized_nickname or not anonymous_session_id:
+            raise HTTPException(status_code=422, detail=ErrorCode.VALIDATION_ERROR)
+        role = "viewer"
+        member_user_id = None
+        member_anonymous_session_id = anonymous_session_id
+    else:
+        if user is None:
+            raise HTTPException(status_code=401, detail=ErrorCode.NOT_AUTHENTICATED)
+        role = "owner" if room.owner_id == user.id else "viewer"
+        member_user_id = user.id
+        member_anonymous_session_id = None
+
     try:
         async with session.begin_nested():
             membership.create_member(
-                session, room.id, user.id, role=role, nickname=normalized_nickname
+                session,
+                room.id,
+                member_user_id,
+                role=role,
+                nickname=normalized_nickname,
+                is_anonymous=anonymous,
+                anonymous_session_id=member_anonymous_session_id,
             )
     except IntegrityError as exc:
         if not _is_member_collision(exc):
             raise
-        log.info("room_rejoin", room_id=str(room.id), user_id=str(user.id))
+        log.info(
+            "room_rejoin",
+            room_id=str(room.id),
+            user_id=str(member_user_id) if member_user_id else None,
+            anonymous=anonymous,
+        )
     else:
         await session.commit()
-        cache.invalidate_rooms_joined(str(user.id))
+        if member_user_id is not None:
+            cache.invalidate_rooms_joined(str(member_user_id))
     return room
 
 
 async def list_rooms_joined(session: AsyncSession, user) -> ListJoinedResponse:
-    """List every membership the user holds, newest first.
+    """List every viewer membership the user holds, newest first.
 
     Cached under ``rooms:joined:{user_id}`` (SPEC §10, TTL 30s); invalidated
     on room creation and on join. The live code path never goes through it.
@@ -211,6 +234,7 @@ async def list_rooms_joined(session: AsyncSession, user) -> ListJoinedResponse:
     if cached is not None:
         return ListJoinedResponse(items=[JoinInfo(**item) for item in cached])
     memberships = await membership.list_memberships_for_user(session, user.id)
+    memberships = [m for m in memberships if m.role == "viewer"]
     payload = [
         JoinInfo(
             room_id=m.room_id,

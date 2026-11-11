@@ -14,14 +14,16 @@ def create_member(
     role: str,
     nickname: str | None = None,
     is_anonymous: bool = False,
+    anonymous_session_id: str | None = None,
 ) -> RoomMember:
     """Add a membership row to the caller's transaction. Does NOT commit."""
     member = RoomMember(
         room_id=room_id,
         user_id=user_id,
+        anonymous_session_id=anonymous_session_id,
+        nickname=nickname,
         role=role,
         is_anonymous=is_anonymous,
-        nickname=nickname,
     )
     session.add(member)
     return member
