@@ -141,6 +141,44 @@ async def client(test_engine):
     app.dependency_overrides.clear()
 
 
+@pytest.fixture
+def ws_client(test_engine, monkeypatch):
+    """Sync TestClient for WS upgrades; REST and WS both hit the TEST database.
+
+    WS admission reads get_sessionmaker() directly (D-19), so
+    dependency_overrides cannot redirect it — the symbol imported into
+    live_code.router is monkeypatched instead (PATTERNS §13 test seam).
+    """
+    from starlette.testclient import TestClient
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from app.main import app
+    from app.shared.database import get_session
+    import app.features.live_code.router as ws_router
+
+    factory = async_sessionmaker(test_engine, expire_on_commit=False)
+
+    async def override_get_session():
+        async with factory() as session:
+            yield session
+
+    app.dependency_overrides[get_session] = override_get_session
+    monkeypatch.setattr(ws_router, "get_sessionmaker", lambda: factory)
+    with TestClient(app, base_url="https://testserver", headers={"Origin": "http://localhost:5173"}) as client:
+        yield client
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture(autouse=True)
+def _reset_hub():
+    """Isolate tests: drop all room registry entries before and after each test."""
+    from app.features.live_code.hub import hub
+
+    hub.reset()
+    yield
+    hub.reset()
+
+
 @pytest.fixture(autouse=True)
 def _clear_rooms_cache():
     """Isolate tests: drop cached rooms:mine entries before and after each test."""

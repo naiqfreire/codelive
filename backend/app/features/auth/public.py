@@ -1,6 +1,7 @@
 """Cross-slice auth contract — the ONLY module other slices may import."""
 import structlog
 from fastapi import Depends, HTTPException, Request
+from starlette.requests import HTTPConnection
 from itsdangerous import BadSignature, SignatureExpired
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,17 +21,18 @@ __all__ = [
     "User",
     "require_authenticated",
     "require_role",
+    "resolve_user",
 ]
 
 
-async def _resolve_user(
-    request: Request,
+async def resolve_user(
+    connection: HTTPConnection,
     session: AsyncSession,
     settings: Settings,
     *,
     log_rejections: bool = True,
 ) -> User | None:
-    token = request.cookies.get(SESSION_COOKIE_NAME)
+    token = connection.cookies.get(SESSION_COOKIE_NAME)
     if not token:
         if log_rejections:
             log.info("auth_rejected", reason="missing")
@@ -58,7 +60,7 @@ async def get_current_user(
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_settings),
 ) -> User:
-    user = await _resolve_user(request, session, settings)
+    user = await resolve_user(request, session, settings)
     if user is None:
         raise HTTPException(status_code=401, detail=ErrorCode.NOT_AUTHENTICATED)
     return user
@@ -73,7 +75,7 @@ async def get_current_user_optional(
 
     Used by the spectator join route, where an anonymous visitor is allowed.
     """
-    return await _resolve_user(request, session, settings, log_rejections=False)
+    return await resolve_user(request, session, settings, log_rejections=False)
 
 
 require_authenticated = get_current_user
