@@ -544,3 +544,33 @@ def test_broadcast_frame_carries_each_recipients_own_request_id(ws_client):
             assert frame["type"] == "presence"
             assert frame["request_id"] == owner_rid
             assert frame["request_id"] != anon_rid
+
+
+def test_forged_anonymous_cookie_is_denied_401(ws_client):
+    room, _owner = _make_room_with_owner(ws_client, "ws-anon-forged@example.com")
+    from itsdangerous import URLSafeTimedSerializer
+
+    forged = URLSafeTimedSerializer("wrong-secret", salt="codelive.anonymous").dumps({"sid": "x"})
+    _expect_denial(
+        ws_client,
+        room["id"],
+        {"origin": _ORIGIN, "cookie": f"codelive_anon={forged}"},
+        401,
+        "not_authenticated",
+    )
+
+
+def test_expired_anonymous_cookie_is_denied_401(ws_client, monkeypatch):
+    room, _owner = _make_room_with_owner(ws_client, "ws-anon-expired@example.com")
+    anon = _join_anonymously(ws_client, room)
+    import app.shared.security as security
+
+    # a legitimately-issued token reads as expired when the max-age window is negative
+    monkeypatch.setattr(security, "ANONYMOUS_MAX_AGE", -1)
+    _expect_denial(
+        ws_client,
+        room["id"],
+        {"origin": _ORIGIN, "cookie": f"codelive_anon={anon}"},
+        401,
+        "not_authenticated",
+    )
