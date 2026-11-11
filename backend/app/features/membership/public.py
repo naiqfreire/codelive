@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.features.membership.models import RoomMember
 
-__all__ = ["RoomMember", "create_member", "create_owner_member", "list_memberships_for_user"]
+__all__ = ["RoomMember", "create_member", "create_owner_member", "get_membership", "list_memberships_for_user"]
 
 
 def create_member(
@@ -32,6 +32,36 @@ def create_member(
 def create_owner_member(session: AsyncSession, room_id, user_id, role: str = "owner") -> RoomMember:
     """Add the owner's membership row to the caller's transaction. Does NOT commit."""
     return create_member(session, room_id, user_id, role=role, nickname=None, is_anonymous=False)
+
+
+async def get_membership(
+    session: AsyncSession,
+    room_id,
+    *,
+    user_id=None,
+    anonymous_session_id: str | None = None,
+) -> RoomMember | None:
+    """Read-only cross-slice lookup by (room_id, identity). Does NOT commit.
+
+    user_id wins when both identities are passed (D-15). Returns None without
+    issuing any query when neither identity is given.
+    """
+    if user_id is not None:
+        criterion = RoomMember.user_id == user_id
+    elif anonymous_session_id is not None:
+        criterion = RoomMember.anonymous_session_id == anonymous_session_id
+    else:
+        return None
+    row = (
+        (
+            await session.execute(
+                select(RoomMember).where(RoomMember.room_id == room_id, criterion)
+            )
+        )
+        .scalars()
+        .first()
+    )
+    return row
 
 
 async def list_memberships_for_user(session: AsyncSession, user_id) -> list[RoomMember]:
