@@ -6,6 +6,7 @@ from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.features.auth import router as auth
+from app.features.live_code import router as live_code
 from app.features.rooms import router as rooms
 from app.shared import health
 from app.shared.asyncio_policy import ensure_selector_event_loop
@@ -38,4 +39,5 @@ api.include_router(auth.public_router, prefix="/auth")
 api.include_router(auth.protected_router, prefix="/auth")
 api.include_router(rooms.router, prefix="/rooms")
 api.include_router(rooms.public_router, prefix="/rooms")
+api.include_router(live_code.router, prefix="/ws")
 app.include_router(api)
