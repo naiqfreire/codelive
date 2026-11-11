@@ -26,30 +26,13 @@ async def test_joined_requires_auth(client):
     assert resp.json()["error"]["code"] == "not_authenticated"
 
 
-async def test_joined_lists_owner_membership(client):
+async def test_joined_excludes_owner_membership(client):
     await _register(client, "joined-owner@example.com", "Owner")
     created = await client.post("/api/rooms", json={"language": "java"})
     assert created.status_code == 201
-    room = created.json()
-    me = await client.get("/api/auth/me")
     resp = await client.get("/api/rooms/joined")
     assert resp.status_code == 200
-    items = resp.json()["items"]
-    assert len(items) == 1
-    item = items[0]
-    assert set(item) == {
-        "room_id",
-        "user_id",
-        "role",
-        "is_anonymous",
-        "nickname",
-        "joined_at",
-    }
-    assert item["room_id"] == room["id"]
-    assert item["user_id"] == me.json()["id"]
-    assert item["role"] == "owner"
-    assert item["is_anonymous"] is False
-    assert item["nickname"] is None
+    assert resp.json() == {"items": []}
 
 
 async def test_joined_lists_viewer_membership_after_join(client):
@@ -75,30 +58,24 @@ async def test_joined_lists_viewer_membership_after_join(client):
     assert item["nickname"] == "Espectador"
 
 
-async def test_joined_includes_all_memberships_without_role_filter(client):
+async def test_joined_excludes_owner_memberships(client):
     await _register(client, "joined-3@example.com", "Owner")
-    first = (await client.post("/api/rooms", json={"language": "php"})).json()
-    second = (await client.post("/api/rooms", json={"language": "javascript"})).json()
+    await client.post("/api/rooms", json={"language": "php"})
+    await client.post("/api/rooms", json={"language": "javascript"})
     resp = await client.get("/api/rooms/joined")
     assert resp.status_code == 200
-    items = resp.json()["items"]
-    assert {item["room_id"] for item in items} == {first["id"], second["id"]}
-    assert all(item["role"] == "owner" for item in items)
+    assert resp.json() == {"items": []}
 
 
-async def test_joined_reflects_own_room_after_primed_cache(client):
+async def test_joined_stays_empty_for_owner_after_primed_cache(client):
     await _register(client, "joined-cache-1@example.com", "Owner")
-    me = (await client.get("/api/auth/me")).json()
     primed = await client.get("/api/rooms/joined")
     assert primed.status_code == 200
     assert primed.json() == {"items": []}
-    room = (await client.post("/api/rooms", json={"language": "python"})).json()
+    await client.post("/api/rooms", json={"language": "python"})
     resp = await client.get("/api/rooms/joined")
     assert resp.status_code == 200
-    items = resp.json()["items"]
-    assert [item["room_id"] for item in items] == [room["id"]]
-    assert items[0]["user_id"] == me["id"]
-    assert items[0]["role"] == "owner"
+    assert resp.json() == {"items": []}
 
 
 async def test_joined_reflects_join_after_primed_cache(client):
