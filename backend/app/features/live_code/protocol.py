@@ -10,23 +10,26 @@ from typing import Literal
 from app.shared.errors import ERROR_MESSAGES
 
 FrameType = Literal["join", "code_update", "presence", "snapshot", "error"]
-SUPPORTED_INBOUND = frozenset({"join"})
+SUPPORTED_INBOUND = frozenset({"join", "code_update"})
 
 
 @dataclass(frozen=True)
 class Frame:
     type: str
+    content: str | None = None  # inbound code_update payload carrier (D-08)
 
 
 class FrameError(Exception):
-    """Inbound frame is not a supported type. Message carries no payload."""
+    """Inbound frame is not a supported type or is malformed. Carries no payload."""
 
 
 def parse_frame(raw: object) -> Frame:
-    """Accept only ``{"type": "join"}`` (Phase 3, A-01/A-02).
+    """Accept only ``{"type": "join"}`` and ``{"type": "code_update", "content"}``.
 
-    Anything else — non-object payloads, unknown or unsupported ``type``
-    values, wrong casing or padding — raises FrameError.
+    ``join`` carries no payload; ``code_update`` requires a string ``content``
+    (missing or non-string content raises FrameError, D-08). Anything else —
+    non-object payloads, unknown or unsupported ``type`` values, wrong casing
+    or padding — raises FrameError.
     """
     if not isinstance(raw, Mapping):
         raise FrameError("frame must be an object")
@@ -35,7 +38,39 @@ def parse_frame(raw: object) -> Frame:
         raise FrameError("unsupported frame type")
     if frame_type not in SUPPORTED_INBOUND:
         raise FrameError("unsupported frame type")
+    if frame_type == "code_update":
+        content = raw.get("content")
+        if not isinstance(content, str):
+            raise FrameError("code_update requires a string content")
+        return Frame(type="code_update", content=content)
     return Frame(type=frame_type)
+
+
+def snapshot_frame(room_id, content: str, language: str, content_hash: str, request_id: str) -> dict:
+    """Build the snapshot frame sent to the joiner only (D-04..D-07)."""
+    return {
+        "type": "snapshot",
+        "room_id": str(room_id),
+        "content": content,
+        "language": language,
+        "content_hash": content_hash,
+        "request_id": request_id,
+    }
+
+
+def code_update_broadcast_frame(room_id, content: str, content_hash: str, request_id: str) -> dict:
+    """Build the code_update broadcast frame for all joined sockets (D-09).
+
+    The frame carries no sender-only fields; ``request_id`` is the
+    recipient's own when built through ``hub.broadcast``.
+    """
+    return {
+        "type": "code_update",
+        "room_id": str(room_id),
+        "content": content,
+        "content_hash": content_hash,
+        "request_id": request_id,
+    }
 
 
 def presence_frame(room_id, count: int, role: str, request_id: str) -> dict:
@@ -49,12 +84,17 @@ def presence_frame(room_id, count: int, role: str, request_id: str) -> dict:
     }
 
 
-def error_frame(code: str, request_id: str) -> dict:
-    """Build the error frame as the REST envelope verbatim (D-14)."""
+def error_frame(code: str, request_id: str, *, message: str | None = None) -> dict:
+    """Build the error frame as the REST envelope verbatim (D-14).
+
+    ``message`` is an optional keyword-only Portuguese override (D-02: the
+    oversize refusal names the 256 KiB limit). When omitted,
+    ``ERROR_MESSAGES[code]`` is used unchanged.
+    """
     return {
         "error": {
             "code": code,
-            "message": ERROR_MESSAGES[code],
+            "message": ERROR_MESSAGES[code] if message is None else message,
             "request_id": request_id,
         }
     }

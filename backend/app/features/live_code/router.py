@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisco
 from itsdangerous import BadSignature, SignatureExpired
 
 from app.features.auth import public as auth
-from app.features.live_code import protocol
+from app.features.live_code import protocol, service
 from app.features.live_code.hub import Connection, hub
 from app.features.rooms import public as rooms_public
 from app.shared.config import Settings, get_settings
@@ -32,6 +32,7 @@ class Admission:
     request_id: str
     role: str
     user: "User | None"
+    language: str
 
 
 async def ws_session_context(
@@ -80,11 +81,11 @@ async def admit(
                     anonymous_session_id = None
         if user is None and anonymous_session_id is None:
             raise HTTPException(status_code=401, detail=ErrorCode.NOT_AUTHENTICATED)
-        _room, role = await rooms_public.authorize_room_identity(
+        room, role = await rooms_public.authorize_room_identity(
             session, room_id, user, anonymous_session_id
         )
     # Session closes here, before accept().
-    return Admission(request_id=request_id, role=role, user=user)
+    return Admission(request_id=request_id, role=role, user=user, language=room.language)
 
 
 @router.websocket("/rooms/{room_id}")
@@ -148,6 +149,77 @@ async def room_channel(
                     room_id,
                     lambda recipient: protocol.presence_frame(
                         room_id, count, recipient.role, recipient.request_id
+                    ),
+                )
+                # D-04/D-07: presence first, then the joiner-only snapshot.
+                # Short-lived session just for the read; closed before the
+                # snapshot is sent. Peers never receive the snapshot (D-05).
+                async with get_sessionmaker()() as session:
+                    state = await service.read_current_state(session, room_id)
+                    content = state.content if state is not None else ""
+                await websocket.send_json(
+                    protocol.snapshot_frame(
+                        room_id,
+                        content,
+                        admission.language,
+                        service.content_hash(content),
+                        admission.request_id,
+                    )
+                )
+            elif frame.type == "code_update":
+                # D-08: full-content replace, latest-wins. frame.content is the
+                # single content carrier (guaranteed str by parse_frame).
+                update = frame.content if frame.content is not None else ""
+                if conn.role != "owner":
+                    # D-14: structural owner-only guard; Phase 5 reuses this frame.
+                    await websocket.send_json(
+                        protocol.error_frame(ErrorCode.FORBIDDEN, admission.request_id)
+                    )
+                    continue
+                size_bytes = service.validate_content_size(update)
+                if size_bytes > service.MAX_CODE_BYTES:
+                    # D-02/D-03: refuse before any DB access; log hash, never content.
+                    log.info(
+                        "code_update_rejected",
+                        room_id=str(room_id),
+                        user_id=str(user_id) if user_id else None,
+                        size_bytes=size_bytes,
+                        content_hash=service.content_hash(update),
+                    )
+                    await websocket.send_json(
+                        protocol.error_frame(
+                            ErrorCode.VALIDATION_ERROR,
+                            admission.request_id,
+                            message="O código excede o limite de 256 KiB.",
+                        )
+                    )
+                    continue
+                # D-10: short-lived session; broadcast only after the commit.
+                try:
+                    async with get_sessionmaker()() as session:
+                        await service.persist_code_update(session, room_id, update)
+                except Exception as exc:
+                    log.error(
+                        "code_update_failed",
+                        room_id=str(room_id),
+                        user_id=str(user_id) if user_id else None,
+                        error_type=type(exc).__name__,
+                    )
+                    await websocket.send_json(
+                        protocol.error_frame(ErrorCode.INTERNAL_ERROR, admission.request_id)
+                    )
+                    continue
+                content_hash = service.content_hash(update)
+                log.info(
+                    "code_update",
+                    room_id=str(room_id),
+                    user_id=str(user_id) if user_id else None,
+                    content_hash=content_hash,
+                )
+                await hub.broadcast(
+                    room_id,
+                    lambda recipient: protocol.code_update_broadcast_frame(
+                        room_id, update, content_hash, recipient.request_id
                     ),
                 )
     except WebSocketDisconnect:

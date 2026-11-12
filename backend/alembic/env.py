@@ -31,6 +31,7 @@ from app.shared.database import Base
 from app.features.auth import models  # noqa: F401
 from app.features.rooms import models  # noqa: F401
 from app.features.membership import models  # noqa: F401
+from app.features.live_code import models  # noqa: F401
 
 # for 'autogenerate' support
 target_metadata = Base.metadata
