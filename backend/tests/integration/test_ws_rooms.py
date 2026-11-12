@@ -523,7 +523,7 @@ def test_session_logs_never_carry_secrets(ws_client, capsys):
 
     configure_logging("INFO")
     capsys.readouterr()
-    room, _owner = _make_room_with_owner(ws_client, "ws-hygiene@example.com")
+    room, owner = _make_room_with_owner(ws_client, "ws-hygiene@example.com")
     ws_client.cookies.clear()
     resp = ws_client.post(
         f"/api/rooms/{room['id']}/join",
@@ -531,11 +531,13 @@ def test_session_logs_never_carry_secrets(ws_client, capsys):
     )
     assert resp.status_code == 200
     anon = ws_client.cookies.get("codelive_anon")
-    session_cookie_value = None
-    with ws_client.websocket_connect(
-        f"/api/ws/rooms/{room['id']}",
-        headers={"origin": _ORIGIN, "cookie": f"codelive_anon={anon}"},
-    ) as ws:
+    assert anon
+    # Both secret-bearing cookies are exercised: the anonymous socket carries
+    # codelive_anon, the owner socket carries codelive_session. Neither value
+    # may reach the captured logs.
+    with _connect(ws_client, room["id"], anon) as ws:
+        _join(ws, 1)
+    with _connect_owner(ws_client, room["id"], owner) as ws:
         _join(ws, 1)
     lines = _capsys_ws_lines(capsys)
     assert lines, "expected ws_* log lines"
@@ -543,7 +545,7 @@ def test_session_logs_never_carry_secrets(ws_client, capsys):
     assert "SentinelNick" not in blob
     assert room["access_code"] not in blob
     assert anon not in blob
-    assert session_cookie_value not in blob if session_cookie_value else True
+    assert owner not in blob
 
 
 def test_ws_lifecycle_events_emitted(ws_client, capsys):
@@ -1151,3 +1153,529 @@ async def test_accepted_and_rejected_paths_never_log_content_cookie_or_nickname(
         )
     ).one()
     assert row.content == accepted_sentinel
+
+
+# ---------------------------------------------------------------------------
+# 05-01: edit authorization — closed-room refusal and refusal audit (LIVE-05)
+# ---------------------------------------------------------------------------
+
+
+async def test_r5_owner_write_to_closed_room_is_refused_and_does_not_persist(
+    ws_client, db_session, capsys
+):
+    """LIVE-05/D-01/D-02/D-03: an owner write to a closed room is refused."""
+    import hashlib
+
+    from app.shared.logging import configure_logging
+
+    configure_logging("INFO")
+    capsys.readouterr()
+    room, owner = _make_room_with_owner(ws_client, "ws-r5-closed@example.com")
+    await _seed_code_state(db_session, room["id"], "before")
+    anon = _join_anonymously(ws_client, room)
+    with _connect_owner(ws_client, room["id"], owner) as ws_owner:
+        _join(ws_owner, 1)
+        with _connect(ws_client, room["id"], anon) as ws_anon:
+            _join(ws_anon, 2)
+            ws_owner.receive_json()  # presence count == 2 broadcast
+            resp = ws_client.patch(
+                f"/api/rooms/{room['id']}/close",
+                headers={"cookie": f"codelive_session={owner}", "origin": _ORIGIN},
+            )
+            assert resp.status_code == 200
+            ws_owner.send_json({"type": "code_update", "content": "after"})
+            frame = ws_owner.receive_json()
+            assert frame["error"]["code"] == "room_closed"
+            assert frame["error"]["message"] == "Sala encerrada."
+            assert frame["error"]["request_id"]
+            # D-03/D-04: socket stays open; a join is still answered with presence
+            ws_owner.send_json({"type": "join"})
+            assert ws_owner.receive_json()["type"] == "presence"
+            # the anon peer's next frame is presence — no code_update arrived
+            ws_anon.send_json({"type": "join"})
+            assert ws_anon.receive_json()["type"] == "presence"
+        # ws_anon closed; drain the disconnect presence broadcast on ws_owner
+        assert ws_owner.receive_json()["count"] == 1
+    row = (
+        await db_session.execute(
+            text("SELECT content FROM room_code_state WHERE room_id = :room_id"),
+            {"room_id": uuid.UUID(room["id"])},
+        )
+    ).one()
+    assert row.content == "before"
+    lines = _capsys_json_lines(capsys)
+    refused = [l for l in lines if l.get("event") == "code_update_refused"]
+    assert len(refused) == 1
+    entry = refused[0]
+    assert entry["reason"] == "room_closed"
+    assert entry["level"] == "warning"
+    assert entry["room_id"] == room["id"]
+    owner_id = (
+        await db_session.execute(
+            text("SELECT owner_id FROM rooms WHERE id = :room_id"),
+            {"room_id": uuid.UUID(room["id"])},
+        )
+    ).scalar_one()
+    assert entry["user_id"] == str(owner_id)
+    assert entry["content_hash"] == hashlib.sha256("after".encode("utf-8")).hexdigest()
+    assert not [l for l in lines if l.get("event") == "code_update_rejected"]
+
+
+async def test_r5_room_status_read_failure_returns_internal_error(
+    ws_client, db_session, capsys, monkeypatch
+):
+    """LIVE-05/D-01: a failing status read answers internal_error and writes nothing."""
+    from app.shared.logging import configure_logging
+    from app.features.rooms import public as rooms_public
+
+    configure_logging("INFO")
+    capsys.readouterr()
+
+    async def _boom(session, room_id):
+        raise RuntimeError("status read exploded")
+
+    monkeypatch.setattr(rooms_public, "get_room_status", _boom)
+    room, owner = _make_room_with_owner(ws_client, "ws-r5-readfail@example.com")
+    await _seed_code_state(db_session, room["id"], "before")
+    with _connect_owner(ws_client, room["id"], owner) as ws:
+        _join(ws, 1)
+        ws.send_json({"type": "code_update", "content": "after"})
+        frame = ws.receive_json()
+        assert frame["error"]["code"] == "internal_error"
+        assert frame["error"]["request_id"]
+    row = (
+        await db_session.execute(
+            text("SELECT content FROM room_code_state WHERE room_id = :room_id"),
+            {"room_id": uuid.UUID(room["id"])},
+        )
+    ).one()
+    assert row.content == "before"
+    lines = _capsys_json_lines(capsys)
+    failed = [l for l in lines if l.get("event") == "code_update_failed"]
+    assert failed, "expected a code_update_failed log line"
+    assert failed[0]["error_type"], "expected a non-empty error_type"
+    assert failed[0]["stage"] == "status_read"  # IN-02: distinguishes the two failure modes
+    assert failed[0]["anonymous"] is False  # IN-03: stable field set per session
+    assert not [l for l in lines if l.get("event") == "code_update_refused"]
+
+
+async def test_r5_persist_failure_is_logged_with_persist_stage(
+    ws_client, db_session, capsys, monkeypatch
+):
+    """IN-02: a failing upsert is distinguishable from a failing status read."""
+    from app.features.live_code import service as live_code_service
+    from app.shared.logging import configure_logging
+
+    configure_logging("INFO")
+    capsys.readouterr()
+
+    async def _boom(session, room_id, content):
+        raise RuntimeError("persist exploded")
+
+    monkeypatch.setattr(live_code_service, "persist_code_update", _boom)
+    room, owner = _make_room_with_owner(ws_client, "ws-r5-persistfail@example.com")
+    await _seed_code_state(db_session, room["id"], "before")
+    with _connect_owner(ws_client, room["id"], owner) as ws:
+        _join(ws, 1)
+        ws.send_json({"type": "code_update", "content": "after"})
+        frame = ws.receive_json()
+        assert frame["error"]["code"] == "internal_error"
+        assert frame["error"]["request_id"]
+    row = (
+        await db_session.execute(
+            text("SELECT content FROM room_code_state WHERE room_id = :room_id"),
+            {"room_id": uuid.UUID(room["id"])},
+        )
+    ).one()
+    assert row.content == "before"
+    lines = _capsys_json_lines(capsys)
+    failed = [l for l in lines if l.get("event") == "code_update_failed"]
+    assert len(failed) == 1
+    assert failed[0]["stage"] == "persist"
+    assert failed[0]["error_type"] == "RuntimeError"
+
+# ---------------------------------------------------------------------------
+# 05-02: authorization matrix — registered spectator, anonymous, spoof, order (LIVE-05)
+# ---------------------------------------------------------------------------
+
+
+async def test_r5_registered_spectator_code_update_is_forbidden_and_logged(
+    ws_client, db_session, capsys
+):
+    """LIVE-05/D-05/D-07: a registered spectator's code_update is refused and audited."""
+    import hashlib
+    import json
+
+    from app.shared.logging import configure_logging
+
+    configure_logging("INFO")
+    capsys.readouterr()
+    sentinel = "r5_registered_spectator_secret_sentinel_1101"
+    room, owner = _make_room_with_owner(ws_client, "ws-r5-reg-owner@example.com")
+    resp = ws_client.post(
+        "/api/auth/register",
+        json={
+            "name": "Viewer",
+            "email": "ws-r5-reg-viewer@example.com",
+            "password": "correct-horse",
+        },
+    )
+    assert resp.status_code == 201
+    viewer = resp.cookies.get("codelive_session")
+    viewer_id = resp.json()["id"]
+    resp = ws_client.post(
+        f"/api/rooms/{room['id']}/join",
+        json={"code": room["access_code"]},
+        headers={"cookie": f"codelive_session={viewer}"},
+    )
+    assert resp.status_code == 200
+    ws_client.cookies.clear()
+    await _seed_code_state(db_session, room["id"], "before")
+    with _connect_owner(ws_client, room["id"], owner) as ws_owner:
+        _join(ws_owner, 1)
+        with ws_client.websocket_connect(
+            f"/api/ws/rooms/{room['id']}",
+            headers={"origin": _ORIGIN, "cookie": f"codelive_session={viewer}"},
+        ) as ws_viewer:
+            assert _join(ws_viewer, 2)["role"] == "viewer"
+            ws_owner.receive_json()  # presence count == 2 broadcast
+            ws_viewer.send_json({"type": "code_update", "content": sentinel})
+            frame = ws_viewer.receive_json()
+            assert frame["error"]["code"] == "forbidden"
+            assert frame["error"]["message"] == "Acesso negado."
+            assert frame["error"]["request_id"]
+            # peer silence: the owner's next frame is the presence reply to
+            # its own idempotent re-join, never a code_update
+            ws_owner.send_json({"type": "join"})
+            frame_owner = ws_owner.receive_json()
+            assert frame_owner["type"] == "presence"
+            assert frame_owner["count"] == 2
+        # ws_viewer closed; drain the disconnect presence broadcast on ws_owner
+        assert ws_owner.receive_json()["count"] == 1
+    row = (
+        await db_session.execute(
+            text("SELECT content FROM room_code_state WHERE room_id = :room_id"),
+            {"room_id": uuid.UUID(room["id"])},
+        )
+    ).one()
+    assert row.content == "before"  # byte-for-byte unchanged
+    lines = _capsys_json_lines(capsys)
+    blob = "\n".join(json.dumps(l) for l in lines)
+    refused = [l for l in lines if l.get("event") == "code_update_refused"]
+    assert len(refused) == 1
+    entry = refused[0]
+    assert entry["level"] == "warning"
+    assert entry["room_id"] == room["id"]
+    assert entry["user_id"] == viewer_id
+    assert entry["reason"] == "not_owner"
+    assert entry["content_hash"] == hashlib.sha256(sentinel.encode("utf-8")).hexdigest()
+    assert entry["request_id"]
+    assert sentinel not in blob
+    assert not [l for l in lines if l.get("event") == "code_update_rejected"]
+
+
+async def test_r5_anonymous_refusal_is_logged_without_user_id(
+    ws_client, db_session, capsys
+):
+    """LIVE-05/D-07: an anonymous spectator's code_update is refused and audited."""
+    import hashlib
+    import json
+
+    from app.shared.logging import configure_logging
+
+    configure_logging("INFO")
+    capsys.readouterr()
+    sentinel = "r5_anonymous_secret_sentinel_2202"
+    room, owner = _make_room_with_owner(ws_client, "ws-r5-anon-owner@example.com")
+    anon = _join_anonymously(ws_client, room)
+    assert anon
+    await _seed_code_state(db_session, room["id"], "before")
+    with _connect_owner(ws_client, room["id"], owner) as ws_owner:
+        _join(ws_owner, 1)
+        with _connect(ws_client, room["id"], anon) as ws_anon:
+            _join(ws_anon, 2)
+            ws_owner.receive_json()  # presence count == 2 broadcast
+            ws_anon.send_json({"type": "code_update", "content": sentinel})
+            frame = ws_anon.receive_json()
+            assert frame["error"]["code"] == "forbidden"
+            assert frame["error"]["message"] == "Acesso negado."
+            assert frame["error"]["request_id"]
+            # peer silence: the owner's next frame is presence, never code_update
+            ws_owner.send_json({"type": "join"})
+            frame_owner = ws_owner.receive_json()
+            assert frame_owner["type"] == "presence"
+            assert frame_owner["count"] == 2
+        # ws_anon closed; drain the disconnect presence broadcast on ws_owner
+        assert ws_owner.receive_json()["count"] == 1
+    row = (
+        await db_session.execute(
+            text("SELECT content FROM room_code_state WHERE room_id = :room_id"),
+            {"room_id": uuid.UUID(room["id"])},
+        )
+    ).one()
+    assert row.content == "before"  # byte-for-byte unchanged
+    lines = _capsys_json_lines(capsys)
+    blob = "\n".join(json.dumps(l) for l in lines)
+    refused = [l for l in lines if l.get("event") == "code_update_refused"]
+    assert len(refused) == 1
+    entry = refused[0]
+    assert entry["anonymous"] is True
+    assert "user_id" not in entry  # D-07: absent, not present-but-null
+    assert entry["reason"] == "not_owner"
+    assert entry["level"] == "warning"
+    assert entry["room_id"] == room["id"]
+    assert entry["content_hash"] == hashlib.sha256(sentinel.encode("utf-8")).hexdigest()
+    assert entry["request_id"]
+    assert sentinel not in blob
+    assert anon not in blob
+    assert not [l for l in lines if l.get("event") == "code_update_rejected"]
+
+
+async def test_r5_client_supplied_role_is_ignored(
+    ws_client, db_session, capsys
+):
+    """LIVE-05/D-05/SPEC §8: a client-supplied role key never decides."""
+    import hashlib
+    import json
+
+    from app.shared.logging import configure_logging
+
+    configure_logging("INFO")
+    capsys.readouterr()
+    sentinel = "r5_spoof_role_secret_sentinel_3301"
+    room, owner = _make_room_with_owner(ws_client, "ws-r5-spoof-owner@example.com")
+    resp = ws_client.post(
+        "/api/auth/register",
+        json={
+            "name": "Viewer",
+            "email": "ws-r5-spoof-viewer@example.com",
+            "password": "correct-horse",
+        },
+    )
+    assert resp.status_code == 201
+    viewer = resp.cookies.get("codelive_session")
+    viewer_id = resp.json()["id"]
+    resp = ws_client.post(
+        f"/api/rooms/{room['id']}/join",
+        json={"code": room["access_code"]},
+        headers={"cookie": f"codelive_session={viewer}"},
+    )
+    assert resp.status_code == 200
+    ws_client.cookies.clear()
+    with ws_client.websocket_connect(
+        f"/api/ws/rooms/{room['id']}",
+        headers={"origin": _ORIGIN, "cookie": f"codelive_session={viewer}"},
+    ) as ws_viewer:
+        _join(ws_viewer, 1)
+        # the frame carries a forged role key; parse_frame ignores it and
+        # conn.role (from the handshake) decides
+        ws_viewer.send_json(
+            {"type": "code_update", "content": sentinel, "role": "owner"}
+        )
+        frame = ws_viewer.receive_json()
+        assert frame["error"]["code"] == "forbidden"
+        assert frame["error"]["message"] == "Acesso negado."
+        assert frame["error"]["request_id"]
+    row = (
+        await db_session.execute(
+            text("SELECT COUNT(*) AS n FROM room_code_state WHERE room_id = :room_id"),
+            {"room_id": uuid.UUID(room["id"])},
+        )
+    ).one()
+    assert row.n == 0  # no row was created by the forged frame
+    lines = _capsys_json_lines(capsys)
+    blob = "\n".join(json.dumps(l) for l in lines)
+    refused = [l for l in lines if l.get("event") == "code_update_refused"]
+    assert len(refused) == 1
+    entry = refused[0]
+    assert entry["reason"] == "not_owner"
+    assert entry["user_id"] == viewer_id  # the socket's own identity, not the frame's
+    assert entry["content_hash"] == hashlib.sha256(sentinel.encode("utf-8")).hexdigest()
+    assert sentinel not in blob
+
+
+async def test_r5_every_refused_frame_is_logged_once(
+    ws_client, db_session, capsys
+):
+    """LIVE-05/D-08: one audit line per refused frame, idempotently."""
+    import hashlib
+    import json
+
+    from app.shared.logging import configure_logging
+
+    configure_logging("INFO")
+    capsys.readouterr()
+    sentinel_first = "r5_twice_first_secret_sentinel_4401"
+    sentinel_second = "r5_twice_second_secret_sentinel_4402"
+    room, owner = _make_room_with_owner(ws_client, "ws-r5-twice-owner@example.com")
+    resp = ws_client.post(
+        "/api/auth/register",
+        json={
+            "name": "Viewer",
+            "email": "ws-r5-twice-viewer@example.com",
+            "password": "correct-horse",
+        },
+    )
+    assert resp.status_code == 201
+    viewer = resp.cookies.get("codelive_session")
+    resp = ws_client.post(
+        f"/api/rooms/{room['id']}/join",
+        json={"code": room["access_code"]},
+        headers={"cookie": f"codelive_session={viewer}"},
+    )
+    assert resp.status_code == 200
+    ws_client.cookies.clear()
+    await _seed_code_state(db_session, room["id"], "before")
+    with ws_client.websocket_connect(
+        f"/api/ws/rooms/{room['id']}",
+        headers={"origin": _ORIGIN, "cookie": f"codelive_session={viewer}"},
+    ) as ws_viewer:
+        _join(ws_viewer, 1)
+        ws_viewer.send_json({"type": "code_update", "content": sentinel_first})
+        frame_first = ws_viewer.receive_json()
+        assert frame_first["error"]["code"] == "forbidden"
+        ws_viewer.send_json({"type": "code_update", "content": sentinel_second})
+        frame_second = ws_viewer.receive_json()
+        assert frame_second["error"]["code"] == "forbidden"
+    row = (
+        await db_session.execute(
+            text("SELECT content FROM room_code_state WHERE room_id = :room_id"),
+            {"room_id": uuid.UUID(room["id"])},
+        )
+    ).one()
+    assert row.content == "before"  # byte-for-byte unchanged by both refusals
+    lines = _capsys_json_lines(capsys)
+    refused = [l for l in lines if l.get("event") == "code_update_refused"]
+    assert len(refused) == 2  # exactly one line per refused frame
+    assert refused[0]["content_hash"] == hashlib.sha256(
+        sentinel_first.encode("utf-8")
+    ).hexdigest()
+    assert refused[1]["content_hash"] == hashlib.sha256(
+        sentinel_second.encode("utf-8")
+    ).hexdigest()
+    blob = "\n".join(json.dumps(l) for l in lines)
+    assert sentinel_first not in blob
+    assert sentinel_second not in blob
+
+
+async def test_r5_non_owner_oversize_frame_is_forbidden_not_rejected(
+    ws_client, db_session, capsys
+):
+    """LIVE-05/D-05/D-09: a non-owner's oversize frame is forbidden, never validation_error."""
+    import json
+
+    from app.features.live_code.service import MAX_CODE_BYTES
+    from app.shared.logging import configure_logging
+
+    configure_logging("INFO")
+    capsys.readouterr()
+    payload = "C" * MAX_CODE_BYTES + _OVERSIZE_SENTINEL
+    room, owner = _make_room_with_owner(ws_client, "ws-r5-oversize-owner@example.com")
+    anon = _join_anonymously(ws_client, room)
+    with _connect(ws_client, room["id"], anon) as ws_anon:
+        _join(ws_anon, 1)
+        ws_anon.send_json({"type": "code_update", "content": payload})
+        frame = ws_anon.receive_json()
+        # D-09 guard order: role decides before size; never validation_error
+        assert frame["error"]["code"] == "forbidden"
+        assert frame["error"]["message"] == "Acesso negado."
+        assert frame["error"]["request_id"]
+    row = (
+        await db_session.execute(
+            text("SELECT COUNT(*) AS n FROM room_code_state WHERE room_id = :room_id"),
+            {"room_id": uuid.UUID(room["id"])},
+        )
+    ).one()
+    assert row.n == 0  # no row was created
+    lines = _capsys_json_lines(capsys)
+    events = [l.get("event") for l in lines]
+    assert "code_update_refused" in events
+    assert "code_update_rejected" not in events
+    blob = "\n".join(json.dumps(l) for l in lines)
+    assert _OVERSIZE_SENTINEL not in blob
+
+
+async def test_r5_refusal_logs_never_contain_content_cookie_or_nickname(
+    ws_client, db_session, capsys
+):
+    """OBS-04/LIVE-05/D-11: refusal lines carry ids/hashes only — never secrets."""
+    import hashlib
+    import json
+
+    from app.shared.logging import configure_logging
+
+    configure_logging("INFO")
+    capsys.readouterr()
+    accepted_sentinel = "r5_hygiene_accepted_secret_sentinel_5501"
+    refused_anon_sentinel = "r5_hygiene_anon_secret_sentinel_5502"
+    refused_closed_sentinel = "r5_hygiene_closed_secret_sentinel_5503"
+
+    room, owner = _make_room_with_owner(ws_client, "ws-r5-hygiene-owner@example.com")
+    await _seed_code_state(db_session, room["id"], "before")
+    ws_client.cookies.clear()
+    resp = ws_client.post(
+        f"/api/rooms/{room['id']}/join",
+        json={"code": room["access_code"], "anonymous": True, "nickname": "R5SentinelNick"},
+    )
+    assert resp.status_code == 200
+    anon = ws_client.cookies.get("codelive_anon")
+    assert anon
+    with _connect_owner(ws_client, room["id"], owner) as ws_owner:
+        _join(ws_owner, 1)
+        with _connect(ws_client, room["id"], anon) as ws_anon:
+            _join(ws_anon, 2)
+            ws_owner.receive_json()  # presence count == 2 broadcast
+            # accepted owner write, before the close
+            ws_owner.send_json({"type": "code_update", "content": accepted_sentinel})
+            assert ws_owner.receive_json()["type"] == "code_update"
+            assert ws_anon.receive_json()["type"] == "code_update"
+            # refusal reason not_owner: the anonymous spectator
+            ws_anon.send_json(
+                {"type": "code_update", "content": refused_anon_sentinel}
+            )
+            frame_anon = ws_anon.receive_json()
+            assert frame_anon["error"]["code"] == "forbidden"
+            # owner closes the room over REST
+            resp = ws_client.patch(
+                f"/api/rooms/{room['id']}/close",
+                headers={"cookie": f"codelive_session={owner}", "origin": _ORIGIN},
+            )
+            assert resp.status_code == 200
+            # refusal reason room_closed: the owner, after the close
+            ws_owner.send_json(
+                {"type": "code_update", "content": refused_closed_sentinel}
+            )
+            frame_closed = ws_owner.receive_json()
+            assert frame_closed["error"]["code"] == "room_closed"
+        # ws_anon closed; drain the disconnect presence broadcast on ws_owner
+        assert ws_owner.receive_json()["count"] == 1
+    lines = _capsys_json_lines(capsys)
+    assert lines, "expected captured log lines"
+    blob = "\n".join(json.dumps(l) for l in lines)
+    # no content sentinel, credential, nickname or e-mail reaches the logs
+    for secret in (
+        accepted_sentinel,
+        refused_anon_sentinel,
+        refused_closed_sentinel,
+        owner,
+        anon,
+        "R5SentinelNick",
+        "ws-r5-hygiene-owner@example.com",
+    ):
+        assert secret not in blob
+    refused = [l for l in lines if l.get("event") == "code_update_refused"]
+    assert len(refused) == 2
+    assert {l["reason"] for l in refused} == {"not_owner", "room_closed"}
+    for entry in refused:
+        assert entry["content_hash"]
+        assert entry["reason"] in {"not_owner", "room_closed"}
+        assert entry["room_id"] == room["id"]
+        assert entry["request_id"]
+        assert "content" not in entry
+    # the accepted path stays covered by the same blob
+    accepted = [l for l in lines if l.get("event") == "code_update"]
+    assert accepted, "expected a code_update log line for the accepted write"
+    assert "content" not in accepted[0]
+    assert accepted[0]["content_hash"] == hashlib.sha256(
+        accepted_sentinel.encode("utf-8")
+    ).hexdigest()
