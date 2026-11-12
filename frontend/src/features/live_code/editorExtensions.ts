@@ -65,6 +65,9 @@ export function createEditorState({
 /**
  * Applies an external value (for example, a WebSocket `snapshot`) without
  * resetting the document when the content is already the same.
+ *
+ * Only the differing range is replaced (common prefix/suffix trimmed), so the
+ * cursor and selection outside that range survive a snapshot or `code_update`.
  */
 export function syncDocument(view: EditorView, value: string): void {
   const current = view.state.doc.toString()
@@ -73,7 +76,26 @@ export function syncDocument(view: EditorView, value: string): void {
     return
   }
 
+  let start = 0
+  const maxStart = Math.min(current.length, value.length)
+
+  while (start < maxStart && current[start] === value[start]) {
+    start += 1
+  }
+
+  let currentEnd = current.length
+  let valueEnd = value.length
+
+  while (
+    currentEnd > start &&
+    valueEnd > start &&
+    current[currentEnd - 1] === value[valueEnd - 1]
+  ) {
+    currentEnd -= 1
+    valueEnd -= 1
+  }
+
   view.dispatch({
-    changes: { from: 0, to: current.length, insert: value },
+    changes: { from: start, to: currentEnd, insert: value.slice(start, valueEnd) },
   })
 }

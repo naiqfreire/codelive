@@ -84,4 +84,24 @@ describe('syncDocument', () => {
 
     expect(view.state.doc.toString()).toBe('novo')
   })
+
+  it('appends new content without moving the cursor', () => {
+    const view = mountEditor({ doc: 'linha 1\n' })
+    view.dispatch({ selection: { anchor: 3 } })
+
+    syncDocument(view, 'linha 1\nlinha 2')
+
+    expect(view.state.doc.toString()).toBe('linha 1\nlinha 2')
+    expect(view.state.selection.main.head).toBe(3)
+  })
+
+  it('keeps the cursor before an edited region', () => {
+    const view = mountEditor({ doc: 'abcdef' })
+    view.dispatch({ selection: { anchor: 1 } })
+
+    syncDocument(view, 'abXdef')
+
+    expect(view.state.doc.toString()).toBe('abXdef')
+    expect(view.state.selection.main.head).toBe(1)
+  })
 })

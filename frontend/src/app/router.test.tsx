@@ -38,6 +38,15 @@ describe('router', () => {
     expect(await screen.findByRole('heading', { name: /sua sala/i })).toBeInTheDocument()
   })
 
+  it('renders a read-only spectator room from the fixture', async () => {
+    renderRoute(`/rooms/${SAMPLE_ROOMS[0].id}/view`)
+
+    expect(await screen.findByRole('heading', { name: /sala ao vivo/i })).toBeInTheDocument()
+
+    const editor = await screen.findByRole('textbox', { name: /código da sala/i })
+    expect(editor).toHaveAttribute('contenteditable', 'false')
+  })
+
   it('shows the not-found state for an unknown room', async () => {
     renderRoute('/rooms/00000000-0000-0000-0000-000000000000')
 
