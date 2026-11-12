@@ -17,6 +17,9 @@ const RoomListPage = lazy(() =>
 const OwnerRoomPage = lazy(() =>
   import.meta.env.DEV ? import('./dev/DevOwnerRoomPage') : import('./pages/OwnerRoomPage'),
 )
+const SpectatorRoomPage = lazy(() =>
+  import.meta.env.DEV ? import('./dev/DevSpectatorRoomPage') : import('./pages/SpectatorRoomPage'),
+)
 
 function withSuspense(element: ReactNode) {
   return <Suspense fallback={<RouteFallback />}>{element}</Suspense>
@@ -38,6 +41,7 @@ export const routes: RouteObject[] = [
     children: [
       { index: true, element: withSuspense(<RoomListPage />) },
       { path: ':roomId', element: withSuspense(<OwnerRoomPage />) },
+      { path: ':roomId/view', element: withSuspense(<SpectatorRoomPage />) },
     ],
   },
   { path: '*', element: <Navigate to="/login" replace /> },
