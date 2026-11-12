@@ -136,6 +136,27 @@ nesta fatia.
 - Exceção de token: as cores exigidas pelo CodeMirror ficam centralizadas em
   `features/live_code/editorTheme.ts`; o restante da interface usa apenas tokens Tailwind.
 
+### 6.6 Espectador ao vivo (#34)
+
+- O editor do espectador é **sempre somente leitura** (`CodeEditor readOnly`). O bloqueio é de
+  interface; o servidor continua sendo a autoridade (RF06/RNF01).
+- Aviso textual fixo: "Você está assistindo. Somente o dono da sala pode editar o código." —
+  nunca depender apenas da cor ou do atributo `contenteditable`.
+- Indicador de conexão em `features/live_code/components/ConnectionStatus.tsx`, com
+  `role="status"` + `aria-live="polite"` (não interrompe quem está lendo):
+  - **Conectando…** — primeira tentativa em andamento (`text-muted-foreground`).
+  - **Conectado** — ponto `accent`.
+  - **Reconectando…** — queda depois de já ter conectado (`text-muted-foreground`, pulso
+    `motion-safe:animate-pulse`).
+  - **Sem conexão** — a primeira tentativa falhou e o cliente continua tentando
+    (`text-destructive`).
+- Reconexão automática: backoff exponencial de 1 s, 2 s, 4 s com teto de 8 s + jitter de até
+  300 ms; tentativas ilimitadas enquanto a página estiver aberta.
+- Durante a queda o último código recebido permanece visível; o `snapshot` seguinte atualiza o
+  documento sem resetar o cursor (RNF04).
+- Contagem de participantes com `aria-live="polite"` e plural/singular corretos.
+- Animação apenas com `motion-safe:`; `prefers-reduced-motion` desliga o pulso.
+
 ## 7. Checklist de entrega
 
 - [ ] Nenhum emoji como ícone; SVG com `aria-hidden` quando decorativo.
