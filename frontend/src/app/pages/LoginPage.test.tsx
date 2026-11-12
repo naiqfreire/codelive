@@ -1,9 +1,9 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
+import { ApiError } from '../../shared/http'
+import type { LoginCredentials } from '../../features/auth'
 import LoginPage from './LoginPage'
-
-type LoginCredentials = { email: string; password: string }
 
 function renderLogin(onSubmit?: (credentials: LoginCredentials) => Promise<void>) {
   return render(
@@ -13,22 +13,85 @@ function renderLogin(onSubmit?: (credentials: LoginCredentials) => Promise<void>
   )
 }
 
+function fillValidCredentials() {
+  fireEvent.change(screen.getByLabelText(/e-mail/i), {
+    target: { value: 'aluno@example.com' },
+  })
+  fireEvent.change(screen.getByLabelText(/senha/i), { target: { value: 'segredo123' } })
+}
+
 describe('LoginPage', () => {
-  it('shows an error when submitting empty fields', () => {
+  it('shows a field error for each empty field', () => {
     renderLogin()
 
     fireEvent.click(screen.getByRole('button', { name: /entrar/i }))
 
-    expect(screen.getByRole('alert')).toHaveTextContent(/informe e-mail e senha/i)
+    expect(screen.getByText('Informe seu e-mail.')).toBeInTheDocument()
+    expect(screen.getByText('Informe sua senha.')).toBeInTheDocument()
   })
 
-  it('focuses the field when the user interacts with it', () => {
+  it('focuses the first invalid field', () => {
     renderLogin()
 
-    const email = screen.getByLabelText(/e-mail/i)
-    email.focus()
+    fireEvent.click(screen.getByRole('button', { name: /entrar/i }))
 
-    expect(email).toHaveFocus()
+    expect(screen.getByLabelText(/e-mail/i)).toHaveFocus()
+  })
+
+  it('rejects a malformed email before calling the API', () => {
+    const onSubmit = vi.fn(async () => undefined)
+    renderLogin(onSubmit)
+
+    fireEvent.change(screen.getByLabelText(/e-mail/i), { target: { value: 'aluno' } })
+    fireEvent.change(screen.getByLabelText(/senha/i), { target: { value: 'segredo123' } })
+    fireEvent.click(screen.getByRole('button', { name: /entrar/i }))
+
+    expect(screen.getByText('Informe um e-mail válido.')).toBeInTheDocument()
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+
+  it('sends trimmed credentials', async () => {
+    const onSubmit = vi.fn(async () => undefined)
+    renderLogin(onSubmit)
+
+    fireEvent.change(screen.getByLabelText(/e-mail/i), {
+      target: { value: '  aluno@example.com  ' },
+    })
+    fireEvent.change(screen.getByLabelText(/senha/i), { target: { value: 'segredo123' } })
+    fireEvent.click(screen.getByRole('button', { name: /entrar/i }))
+
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith({
+        email: 'aluno@example.com',
+        password: 'segredo123',
+      })
+    })
+  })
+
+  it('shows the message for invalid credentials returned by the API', async () => {
+    const onSubmit = vi.fn(async () => {
+      throw new ApiError(401, 'invalid_credentials', 'Credenciais inválidas.', 'req-1')
+    })
+    renderLogin(onSubmit)
+
+    fillValidCredentials()
+    fireEvent.click(screen.getByRole('button', { name: /entrar/i }))
+
+    expect(await screen.findByText('E-mail ou senha incorretos.')).toBeInTheDocument()
+  })
+
+  it('falls back to a generic message for an unexpected failure', async () => {
+    const onSubmit = vi.fn(async () => {
+      throw new Error('boom')
+    })
+    renderLogin(onSubmit)
+
+    fillValidCredentials()
+    fireEvent.click(screen.getByRole('button', { name: /entrar/i }))
+
+    expect(
+      await screen.findByText('Não foi possível entrar. Tente novamente.'),
+    ).toBeInTheDocument()
   })
 
   it('shows a loading state while submitting and restores afterwards', async () => {
@@ -42,8 +105,7 @@ describe('LoginPage', () => {
 
     renderLogin(onSubmit)
 
-    fireEvent.change(screen.getByLabelText(/e-mail/i), { target: { value: 'aluno@example.com' } })
-    fireEvent.change(screen.getByLabelText(/senha/i), { target: { value: 'segredo' } })
+    fillValidCredentials()
     fireEvent.click(screen.getByRole('button', { name: /entrar/i }))
 
     const loadingButton = await screen.findByRole('button', { name: /entrando/i })

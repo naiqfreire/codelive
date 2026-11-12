@@ -98,24 +98,41 @@ Implementação em `features/rooms/components/AccessCode.tsx` + `features/rooms/
 - Foco sempre visível (`ring-2 ring-ring ring-offset-2 ring-offset-background`).
 - Ícones em SVG (Lucide/Heroicons), nunca emoji.
 
-### 6.4 Layout de autenticação (#11)
+### 6.4 Autenticação: cadastro, login e sessão (#10, #11)
 
 `AuthLayout` é o shell de login e registro: painel de marca (oculto abaixo de `lg`) + área de
-formulário centralizada (`max-w-md`). As páginas são apenas layout; nenhuma chamada de API entra
-nesta fatia.
+formulário centralizada (`max-w-md`). As páginas (`app/pages/LoginPage.tsx` e `RegisterPage.tsx`)
+são apresentacionais e recebem `onSubmit`; a composição com a API vive em
+`app/routes/LoginRoute.tsx` e `app/routes/RegisterRoute.tsx`, e as chamadas HTTP em
+`features/auth/api.ts`.
 
-- **Foco:** anel global `focus-visible:ring-2 ring-ring ring-offset-2 ring-offset-background` em
-  `src/index.css`; campos e botões herdam o mesmo tratamento. Ordem de tabulação = ordem visual,
-  sem `tabIndex` positivo.
-- **Erro:** mensagem em `role="alert"` com `text-destructive`, associada ao campo via
-  `aria-describedby` e `aria-invalid`, sempre com texto (nunca só cor). Erros de formulário
-  (campos vazios) aparecem acima do botão; erros de campo ficam junto ao campo.
+- **Sessão:** o token é um cookie `httpOnly`, `Secure`, `SameSite=Lax` definido pelo backend. O
+  front nunca o lê nem o guarda; `GET /api/auth/me` alimenta o `AuthProvider`, então recarregar a
+  página ou abrir outra aba mantém o estado. Nunca usar `localStorage`.
+- **Rotas:** `ProtectedRoute` bloqueia `/rooms/*` e envia para `/login` guardando o destino em
+  `location.state.from` (apenas caminho interno). `GuestRoute` manda usuário autenticado para
+  `/rooms`. Enquanto a sessão é desconhecida, as rotas mostram `role="status"` ("Carregando…") e
+  nunca renderizam conteúdo privado.
+- **Falha de sessão:** erro que não é 401 (rede, 5xx) vira estado `error` com `role="alert"` e botão
+  "Tentar novamente" — não derruba o usuário para o login.
+- **Validação:** espelha o backend (nome ≤ 120, senha entre 8 e 128, e-mail com formato válido).
+  Cada campo inválido recebe `error` no `TextField`, foco no primeiro inválido ao enviar, e o erro
+  some ao digitar. `validation_error` do backend é exibido como veio.
+- **Erro de API:** `role="alert"` com `text-destructive` acima do botão. `invalid_credentials` →
+  "E-mail ou senha incorretos."; `email_already_exists` → "Este e-mail já está cadastrado."; falha
+  de rede → "Não foi possível conectar ao servidor. Tente novamente." (ver
+  `features/auth/messages.ts`).
 - **Carregamento:** o botão de envio entra em `isLoading` → `aria-busy="true"`, `disabled`, rótulo
   "Entrando…"/"Criando conta…" e `Spinner`; os campos ficam `disabled` durante o envio e o estado
   volta ao normal no `finally`.
-- **Rota:** `/` redireciona para `/login`; `/register` fica no mesmo layout. Páginas são lazy com
+- **Logout:** botão "Sair" no `AppShell`, sempre visível, com `min-h-11`; mostra "Saindo…" e
+  spinner durante a chamada e, se falhar, exibe `role="alert"` sem encerrar a sessão local.
+- **Rota:** `/` redireciona para `/login`; `/register` fica no mesmo layout. Rotas são lazy com
   fallback `role="status"` ("Carregando…").
 - **Alvos:** botão e campos com `min-h-11` (44 px).
+- **Foco:** anel global `focus-visible:ring-2 ring-ring ring-offset-2 ring-offset-background` em
+  `src/index.css`; campos e botões herdam o mesmo tratamento. Ordem de tabulação = ordem visual,
+  sem `tabIndex` positivo.
 
 ### 6.5 Editor de código (#33)
 

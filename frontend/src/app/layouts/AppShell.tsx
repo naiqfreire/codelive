@@ -1,4 +1,7 @@
-import { Link, Outlet, useLocation } from 'react-router-dom'
+import { useState } from 'react'
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { useAuth } from '../../features/auth'
+import { Button } from '../../shared/components'
 
 const NAV_LINK_CLASSES =
   'inline-flex min-h-11 items-center rounded-lg px-3 text-sm font-medium transition focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none'
@@ -6,9 +9,29 @@ const NAV_LINK_CLASSES =
 const FUTURE_ITEM_CLASSES =
   'inline-flex min-h-11 items-center rounded-lg px-3 text-sm font-medium text-muted-foreground/60'
 
+const LOGOUT_ERROR = 'Não foi possível sair. Tente novamente.'
+
 export function AppShell() {
   const { pathname } = useLocation()
+  const navigate = useNavigate()
+  const { user, logout } = useAuth()
+  const [isLoggingOut, setIsLoggingOut] = useState(false)
+  const [logoutError, setLogoutError] = useState<string | null>(null)
   const isRoomsSection = pathname.startsWith('/rooms')
+
+  async function handleLogout() {
+    setLogoutError(null)
+    setIsLoggingOut(true)
+
+    try {
+      await logout()
+      navigate('/login', { replace: true })
+    } catch {
+      setLogoutError(LOGOUT_ERROR)
+    } finally {
+      setIsLoggingOut(false)
+    }
+  }
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -39,16 +62,30 @@ export function AppShell() {
             >
               Entrar com código
             </span>
-            <span
-              aria-disabled="true"
-              title="Disponível depois da integração com a API"
-              className={FUTURE_ITEM_CLASSES}
+            {user ? (
+              <span className="max-w-xs truncate px-3 text-sm text-muted-foreground">
+                Olá, {user.name}
+              </span>
+            ) : null}
+            <Button
+              type="button"
+              variant="secondary"
+              isLoading={isLoggingOut}
+              onClick={() => {
+                void handleLogout()
+              }}
             >
-              Sair
-            </span>
+              {isLoggingOut ? 'Saindo…' : 'Sair'}
+            </Button>
           </nav>
         </div>
       </header>
+
+      {logoutError ? (
+        <p role="alert" className="mx-auto w-full max-w-6xl px-6 pt-4 text-sm text-destructive">
+          {logoutError}
+        </p>
+      ) : null}
 
       <main className="mx-auto w-full max-w-6xl px-6 py-10">
         <Outlet />
