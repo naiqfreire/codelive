@@ -7,6 +7,7 @@ D-13: get-or-create on write — no row yet means the INSERT branch runs.
 """
 import hashlib
 import uuid
+from typing import Literal
 
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
@@ -29,6 +30,27 @@ def validate_content_size(content: str) -> int:
     raises for size, it only measures.
     """
     return len(content.encode("utf-8"))
+
+
+RefusalReason = Literal["not_owner", "room_closed"]
+
+
+def refusal_reason(role: str, room_status: str | None) -> RefusalReason | None:
+    """Authorization decision for an inbound ``code_update`` (D-09/D-12).
+
+    Pure and I/O-free: role and room status in, a reason (or None) out.
+    Order (D-09): role is decided before status, so a non-owner never gets
+    role-independent feedback. The comparison is ``!= "active"`` rather than
+    ``== "closed"`` on purpose: the column is constrained to ``active|closed``,
+    so the only other reachable input is ``None`` — a vanished row — which
+    must fail closed as ``room_closed``; likewise any unknown value fails
+    closed instead of being writable.
+    """
+    if role != "owner":
+        return "not_owner"
+    if room_status != "active":
+        return "room_closed"
+    return None
 
 
 async def read_current_state(

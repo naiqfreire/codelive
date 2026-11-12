@@ -49,6 +49,22 @@ def _stub_session(room, member):
     return _Session()
 
 
+def _status_session(value):
+    class _Result:
+        def scalar_one_or_none(self):
+            return value
+
+    class _Session:
+        def __init__(self):
+            self.statements = []
+
+        async def execute(self, stmt):
+            self.statements.append(stmt)
+            return _Result()
+
+    return _Session()
+
+
 def _viewer_row(room_id, user_id=None, anonymous_session_id=None):
     return RoomMember(
         room_id=room_id,
@@ -62,7 +78,7 @@ def _viewer_row(room_id, user_id=None, anonymous_session_id=None):
 
 def test_public_surface_is_exact():
     public = __import__("app.features.rooms.public", fromlist=["x"])
-    assert public.__all__ == ["authorize_room_identity"]
+    assert public.__all__ == ["authorize_room_identity", "get_room_status"]
 
 
 def test_rooms_public_does_not_import_other_slices():
@@ -79,6 +95,42 @@ def test_rooms_public_is_commit_free():
     source = inspect.getsource(r.public)
     assert ".commit(" not in source
     assert ".rollback(" not in source
+
+
+async def test_room_status_returns_active():
+    from app.features.rooms import public
+
+    session = _status_session("active")
+    room_id = uuid.uuid7()
+
+    status = await public.get_room_status(session, room_id)
+
+    assert status == "active"
+    assert len(session.statements) == 1
+
+
+async def test_room_status_returns_closed():
+    from app.features.rooms import public
+
+    session = _status_session("closed")
+    room_id = uuid.uuid7()
+
+    status = await public.get_room_status(session, room_id)
+
+    assert status == "closed"
+    assert len(session.statements) == 1
+
+
+async def test_unknown_room_status_is_none():
+    from app.features.rooms import public
+
+    session = _status_session(None)
+    room_id = uuid.uuid7()
+
+    status = await public.get_room_status(session, room_id)
+
+    assert status is None
+    assert len(session.statements) == 1
 
 
 async def test_unknown_room_raises_404_room_not_found():
