@@ -352,6 +352,9 @@ def test_valid_session_wins_over_anonymous_cookie(ws_client):
 
 
 def test_code_update_is_refused_and_socket_stays_open(ws_client):
+    # D-14-mandated revision: an anonymous spectator (non-owner) sending
+    # code_update now receives `forbidden` / "Acesso negado." — the exact
+    # frame Phase 5 will reuse — instead of Phase 3's validation_error.
     room, _owner = _make_room_with_owner(ws_client, "ws-refuse-cu@example.com")
     anon = _join_anonymously(ws_client, room)
     with ws_client.websocket_connect(
@@ -362,8 +365,8 @@ def test_code_update_is_refused_and_socket_stays_open(ws_client):
         frame = ws.receive_json()
         assert frame == {
             "error": {
-                "code": "validation_error",
-                "message": "Dados inválidos.",
+                "code": "forbidden",
+                "message": "Acesso negado.",
                 "request_id": frame["error"]["request_id"],
             }
         }
@@ -745,3 +748,285 @@ async def test_room_without_state_row_gets_empty_snapshot(ws_client, db_session)
         assert snapshot["content"] == ""
         assert snapshot["language"] == "python"
         assert snapshot["content_hash"] == hashlib.sha256(b"").hexdigest()
+
+
+# ---------------------------------------------------------------------------
+# 04-03: owner code_update — guard, oversize refusal, persist+broadcast (LIVE-04, LIVE-07, OBS-04, QUAL-03)
+# ---------------------------------------------------------------------------
+
+_OVERSIZE_SENTINEL = "Z_SENTINEL_OVERSIZE"
+
+
+def _capsys_json_lines(capsys):
+    import json
+
+    lines = []
+    for raw in capsys.readouterr().out.splitlines():
+        raw = raw.strip()
+        if not raw:
+            continue
+        try:
+            lines.append(json.loads(raw))
+        except json.JSONDecodeError:
+            continue
+    return lines
+
+
+def _connect_owner(ws_client, room_id, owner_session):
+    return ws_client.websocket_connect(
+        f"/api/ws/rooms/{room_id}",
+        headers={"origin": _ORIGIN, "cookie": f"codelive_session={owner_session}"},
+    )
+
+
+async def test_non_owner_code_update_writes_nothing_and_broadcasts_nothing(
+    ws_client, db_session
+):
+    """T-04-07: a non-owner's code_update is forbidden — no write, no broadcast."""
+    room, owner = _make_room_with_owner(ws_client, "ws-nonowner-cu@example.com")
+    anon = _join_anonymously(ws_client, room)
+    with _connect_owner(ws_client, room["id"], owner) as ws_owner:
+        _join(ws_owner, 1)
+        with _connect(ws_client, room["id"], anon) as ws_anon:
+            _join(ws_anon, 2)
+            ws_owner.receive_json()  # presence count == 2 broadcast
+            ws_anon.send_json({"type": "code_update", "content": "sneaky edit"})
+            frame = ws_anon.receive_json()
+            assert frame["error"]["code"] == "forbidden"
+            assert frame["error"]["message"] == "Acesso negado."
+            # the owner receives no code_update: its next frame is the
+            # presence reply to its own idempotent re-join
+            ws_owner.send_json({"type": "join"})
+            frame_owner = ws_owner.receive_json()
+            assert frame_owner["type"] == "presence"
+            assert frame_owner["count"] == 2
+        # ws_anon closed; drain the disconnect presence broadcast on ws_owner
+        assert ws_owner.receive_json()["count"] == 1
+    row = (
+        await db_session.execute(
+            text("SELECT COUNT(*) AS n FROM room_code_state WHERE room_id = :room_id"),
+            {"room_id": uuid.UUID(room["id"])},
+        )
+    ).one()
+    assert row.n == 0
+
+
+async def test_oversize_code_update_is_refused_before_db_access(ws_client, db_session):
+    """QUAL-03/D-02: > 262_144 UTF-8 bytes is refused before any DB access."""
+    from app.features.live_code.service import MAX_CODE_BYTES
+
+    payload = "A" * MAX_CODE_BYTES + _OVERSIZE_SENTINEL
+    room, owner = _make_room_with_owner(ws_client, "ws-oversize@example.com")
+    with _connect_owner(ws_client, room["id"], owner) as ws:
+        _join(ws, 1)
+        ws.send_json({"type": "code_update", "content": payload})
+        frame = ws.receive_json()
+        assert frame["error"]["code"] == "validation_error"
+        assert "256 KiB" in frame["error"]["message"]
+        assert frame["error"]["request_id"]
+        # socket stays open: a join on the same socket still succeeds
+        ws.send_json({"type": "join"})
+        assert ws.receive_json()["type"] == "presence"
+    row = (
+        await db_session.execute(
+            text("SELECT COUNT(*) AS n FROM room_code_state WHERE room_id = :room_id"),
+            {"room_id": uuid.UUID(room["id"])},
+        )
+    ).one()
+    assert row.n == 0
+
+
+async def test_oversize_code_update_rejected_log_carries_hash_not_content(
+    ws_client, capsys, db_session
+):
+    """D-03: `code_update_rejected` logs room_id/user_id/size_bytes/content_hash only."""
+    import hashlib
+
+    from app.features.live_code.service import MAX_CODE_BYTES
+    from app.shared.logging import configure_logging
+
+    configure_logging("INFO")
+    capsys.readouterr()
+    payload = "A" * MAX_CODE_BYTES + _OVERSIZE_SENTINEL
+    room, owner = _make_room_with_owner(ws_client, "ws-oversize-log@example.com")
+    with _connect_owner(ws_client, room["id"], owner) as ws:
+        _join(ws, 1)
+        ws.send_json({"type": "code_update", "content": payload})
+        frame = ws.receive_json()
+        assert frame["error"]["code"] == "validation_error"
+    lines = _capsys_json_lines(capsys)
+    blob = "\n".join(__import__("json").dumps(l) for l in lines)
+    assert _OVERSIZE_SENTINEL not in blob
+    rejected = [l for l in lines if l.get("event") == "code_update_rejected"]
+    assert rejected, "expected a code_update_rejected log line"
+    entry = rejected[0]
+    assert entry["room_id"] == room["id"]
+    assert entry["user_id"]
+    assert entry["size_bytes"] == len(payload.encode("utf-8"))
+    assert entry["content_hash"] == hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+async def test_owner_code_update_persists_and_broadcasts_after_commit(
+    ws_client, db_session, capsys
+):
+    """D-09/D-10: persist first; broadcast (sender included) only after commit."""
+    import hashlib
+
+    from sqlalchemy import text as _text
+
+    from app.shared.logging import configure_logging
+
+    configure_logging("INFO")
+    capsys.readouterr()
+    sentinel = "supersecret_payload_sentinel_42"
+    room, owner = _make_room_with_owner(ws_client, "ws-persist-cu@example.com")
+    anon = _join_anonymously(ws_client, room)
+    with _connect_owner(ws_client, room["id"], owner) as ws_owner:
+        rid_owner = _join(ws_owner, 1)["request_id"]
+        with _connect(ws_client, room["id"], anon) as ws_anon:
+            rid_anon = _join(ws_anon, 2)["request_id"]
+            ws_owner.receive_json()  # presence count == 2 broadcast
+            ws_owner.send_json({"type": "code_update", "content": sentinel})
+            frame_owner = ws_owner.receive_json()
+            frame_anon = ws_anon.receive_json()
+            expected_hash = hashlib.sha256(sentinel.encode("utf-8")).hexdigest()
+            for frame, rid in ((frame_owner, rid_owner), (frame_anon, rid_anon)):
+                assert frame == {
+                    "type": "code_update",
+                    "room_id": room["id"],
+                    "content": sentinel,
+                    "content_hash": expected_hash,
+                    "request_id": rid,  # per-recipient request_id (D-13)
+                }
+        # ws_anon closed; drain the disconnect presence broadcast on ws_owner
+        assert ws_owner.receive_json()["count"] == 1
+    row = (
+        await db_session.execute(
+            _text("SELECT content FROM room_code_state WHERE room_id = :room_id"),
+            {"room_id": uuid.UUID(room["id"])},
+        )
+    ).one()
+    assert row.content == sentinel
+    lines = _capsys_json_lines(capsys)
+    blob = "\n".join(__import__("json").dumps(l) for l in lines)
+    assert sentinel not in blob
+    events = {l["event"]: l for l in lines if "event" in l}
+    assert "code_update" in events
+    assert events["code_update"]["room_id"] == room["id"]
+    assert events["code_update"]["content_hash"] == expected_hash
+
+
+async def test_db_failure_sends_internal_error_to_sender_only(
+    ws_client, db_session, monkeypatch
+):
+    """D-10: DB failure -> internal_error to the sender only; no broadcast; row unchanged."""
+    import app.features.live_code.service as service
+
+    room, owner = _make_room_with_owner(ws_client, "ws-dbfail-cu@example.com")
+    await _seed_code_state(db_session, room["id"], "before")
+    anon = _join_anonymously(ws_client, room)
+
+    async def _boom(session, room_id, content):
+        raise RuntimeError("db is down")
+
+    monkeypatch.setattr(service, "persist_code_update", _boom)
+    with _connect_owner(ws_client, room["id"], owner) as ws_owner:
+        _join(ws_owner, 1)
+        with _connect(ws_client, room["id"], anon) as ws_anon:
+            _join(ws_anon, 2)
+            ws_owner.receive_json()  # presence count == 2 broadcast
+            ws_owner.send_json({"type": "code_update", "content": "after"})
+            frame = ws_owner.receive_json()
+            assert frame["error"]["code"] == "internal_error"
+            assert frame["error"]["request_id"]
+            # the viewer receives no code_update: its next frame is the
+            # presence reply to its own idempotent re-join
+            ws_anon.send_json({"type": "join"})
+            frame_anon = ws_anon.receive_json()
+            assert frame_anon["type"] == "presence"
+            assert frame_anon["count"] == 2
+            # the sender's socket stays open: a re-join still succeeds
+            ws_owner.send_json({"type": "join"})
+            frame_owner = ws_owner.receive_json()
+            assert frame_owner["type"] == "presence"
+            assert frame_owner["count"] == 2
+        # ws_anon closed; drain the disconnect presence broadcast on ws_owner
+        assert ws_owner.receive_json()["count"] == 1
+    row = (
+        await db_session.execute(
+            text("SELECT content FROM room_code_state WHERE room_id = :room_id"),
+            {"room_id": uuid.UUID(room["id"])},
+        )
+    ).one()
+    assert row.content == "before"
+
+
+# ---------------------------------------------------------------------------
+# 04-03 Task 4: full owner code_update round-trip suite
+# ---------------------------------------------------------------------------
+
+
+def test_owner_code_update_round_trip_and_log_hygiene(ws_client, capsys):
+    """LIVE-04/LIVE-07/OBS-04: owner + anonymous viewer; raw code never logged."""
+    import hashlib
+    import json
+
+    from app.shared.logging import configure_logging
+
+    configure_logging("INFO")
+    capsys.readouterr()
+    sentinel = "roundtrip_secret_content_sentinel_🐍"
+    room, owner = _make_room_with_owner(ws_client, "ws-roundtrip@example.com")
+    anon = _join_anonymously(ws_client, room)
+    with _connect_owner(ws_client, room["id"], owner) as ws_owner:
+        rid_owner = _join(ws_owner, 1)["request_id"]
+        with _connect(ws_client, room["id"], anon) as ws_anon:
+            rid_anon = _join(ws_anon, 2)["request_id"]
+            ws_owner.receive_json()  # presence count == 2 broadcast
+            ws_owner.send_json({"type": "code_update", "content": sentinel})
+            frame_owner = ws_owner.receive_json()
+            frame_anon = ws_anon.receive_json()
+            expected_hash = hashlib.sha256(sentinel.encode("utf-8")).hexdigest()
+            # the sender receives the same broadcast frame, per-recipient ids
+            assert frame_owner["type"] == "code_update"
+            assert frame_owner["request_id"] == rid_owner
+            assert frame_anon["type"] == "code_update"
+            assert frame_anon["request_id"] == rid_anon
+            assert frame_anon["content"] == sentinel
+            assert frame_anon["content_hash"] == expected_hash
+            assert frame_anon["room_id"] == room["id"]
+        # ws_anon closed; drain the disconnect presence broadcast on ws_owner
+        assert ws_owner.receive_json()["count"] == 1
+    lines = _capsys_json_lines(capsys)
+    blob = "\n".join(json.dumps(l) for l in lines)
+    assert sentinel not in blob
+    assert "ws-roundtrip@example.com" not in blob
+
+
+def test_owner_reconnect_after_edit_receives_new_content_byte_for_byte(ws_client):
+    """LIVE-07: edit -> disconnect -> reconnect; snapshot matches the edit byte-for-byte."""
+    import hashlib
+
+    payload = "# café\nedited 🐍 content\n"
+    room, owner = _make_room_with_owner(ws_client, "ws-reconnect-edit@example.com")
+    headers = {"origin": _ORIGIN, "cookie": f"codelive_session={owner}"}
+    with ws_client.websocket_connect(
+        f"/api/ws/rooms/{room['id']}", headers=headers
+    ) as ws:
+        _join(ws, 1)
+        ws.send_json({"type": "code_update", "content": payload})
+        frame = ws.receive_json()
+        assert frame["type"] == "code_update"
+        assert frame["content"] == payload
+    with ws_client.websocket_connect(
+        f"/api/ws/rooms/{room['id']}", headers=headers
+    ) as ws:
+        ws.send_json({"type": "join"})
+        ws.receive_json()  # presence
+        snapshot = ws.receive_json()
+        assert snapshot["type"] == "snapshot"
+        assert snapshot["content"] == payload  # byte-for-byte
+        assert snapshot["content_hash"] == hashlib.sha256(
+            payload.encode("utf-8")
+        ).hexdigest()
+
