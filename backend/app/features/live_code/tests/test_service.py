@@ -1,9 +1,10 @@
-"""Unit: content_hash, MAX_CODE_BYTES and validate_content_size. No database."""
+"""Unit: content_hash, MAX_CODE_BYTES, validate_content_size and refusal_reason. No database."""
 import hashlib
 
 from app.features.live_code.service import (
     MAX_CODE_BYTES,
     content_hash,
+    refusal_reason,
     validate_content_size,
 )
 
@@ -46,3 +47,31 @@ def test_validate_content_size_counts_multibyte_bytes_not_chars():
     # 262_144 bytes of UTF-8; fewer characters than bytes
     content = "á" * (MAX_CODE_BYTES // 2)
     assert validate_content_size(content) == MAX_CODE_BYTES
+
+
+def test_owner_of_active_room_may_write():
+    assert refusal_reason("owner", "active") is None  # D-12
+
+
+def test_owner_of_closed_room_is_room_closed():
+    assert refusal_reason("owner", "closed") == "room_closed"
+
+
+def test_viewer_of_active_room_is_not_owner():
+    assert refusal_reason("viewer", "active") == "not_owner"
+
+
+def test_role_is_decided_before_status():
+    assert refusal_reason("viewer", "closed") == "not_owner"  # D-09 order
+
+
+def test_non_owner_with_unread_status_is_still_not_owner():
+    assert refusal_reason("viewer", None) == "not_owner"  # makes the conditional read safe
+
+
+def test_owner_with_absent_status_fails_closed():
+    assert refusal_reason("owner", None) == "room_closed"  # fail closed
+
+
+def test_owner_with_unknown_status_fails_closed():
+    assert refusal_reason("owner", "archived") == "room_closed"  # fail closed

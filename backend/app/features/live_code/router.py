@@ -26,6 +26,8 @@ log = structlog.get_logger()
 
 router = APIRouter()
 
+_REFUSAL_ERROR_CODES = {"not_owner": ErrorCode.FORBIDDEN, "room_closed": ErrorCode.ROOM_CLOSED}
+
 
 @dataclass
 class Admission:
@@ -33,6 +35,18 @@ class Admission:
     role: str
     user: "User | None"
     language: str
+
+
+async def _read_room_status(room_id: uuid.UUID) -> str | None:
+    """Short-lived read session for the write path's status re-read (D-01).
+
+    Lives in router.py on purpose: the integration fixture redirects the WS
+    path to the test database by monkeypatching THIS module's
+    `get_sessionmaker` attribute; a session opened anywhere else would reach
+    the main database.
+    """
+    async with get_sessionmaker()() as session:
+        return await rooms_public.get_room_status(session, room_id)
 
 
 async def ws_session_context(
@@ -170,10 +184,44 @@ async def room_channel(
                 # D-08: full-content replace, latest-wins. frame.content is the
                 # single content carrier (guaranteed str by parse_frame).
                 update = frame.content if frame.content is not None else ""
-                if conn.role != "owner":
-                    # D-14: structural owner-only guard; Phase 5 reuses this frame.
+                # D-09: role → status → size. The status read runs only for the
+                # owner; a failure answers internal_error before any refusal.
+                if conn.role == "owner":
+                    try:
+                        room_status = await _read_room_status(room_id)
+                    except Exception as exc:
+                        log.error(
+                            "code_update_failed",
+                            room_id=str(room_id),
+                            user_id=str(user_id) if user_id else None,
+                            anonymous=conn.anonymous,
+                            error_type=type(exc).__name__,
+                            stage="status_read",
+                        )
+                        await websocket.send_json(
+                            protocol.error_frame(
+                                ErrorCode.INTERNAL_ERROR, admission.request_id
+                            )
+                        )
+                        continue
+                else:
+                    room_status = None
+                reason = service.refusal_reason(conn.role, room_status)
+                if reason is not None:
+                    # D-05/D-06/D-07/D-11: ids and a hash, never content, never a cookie.
+                    log.warning(
+                        "code_update_refused",
+                        room_id=str(room_id),
+                        # D-07: an anonymous socket carries no user_id key at all.
+                        **({"user_id": str(user_id)} if user_id is not None else {}),
+                        anonymous=conn.anonymous,
+                        reason=reason,
+                        content_hash=service.content_hash(update),
+                    )
                     await websocket.send_json(
-                        protocol.error_frame(ErrorCode.FORBIDDEN, admission.request_id)
+                        protocol.error_frame(
+                            _REFUSAL_ERROR_CODES[reason], admission.request_id
+                        )
                     )
                     continue
                 size_bytes = service.validate_content_size(update)
@@ -204,6 +252,7 @@ async def room_channel(
                         room_id=str(room_id),
                         user_id=str(user_id) if user_id else None,
                         error_type=type(exc).__name__,
+                        stage="persist",
                     )
                     await websocket.send_json(
                         protocol.error_frame(ErrorCode.INTERNAL_ERROR, admission.request_id)
