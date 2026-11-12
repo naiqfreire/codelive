@@ -3,6 +3,7 @@ import uuid
 from typing import TYPE_CHECKING
 
 from fastapi import HTTPException
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.features.membership import public as membership
@@ -12,7 +13,7 @@ from app.shared.errors import ErrorCode
 if TYPE_CHECKING:
     from app.features.auth.models import User
 
-__all__ = ["authorize_room_identity"]
+__all__ = ["authorize_room_identity", "get_room_status"]
 
 
 async def authorize_room_identity(
@@ -44,3 +45,14 @@ async def authorize_room_identity(
         raise HTTPException(status_code=403, detail=ErrorCode.FORBIDDEN)
     role = "owner" if (user is not None and room.owner_id == user.id) else "viewer"
     return room, role
+
+
+async def get_room_status(session: AsyncSession, room_id: uuid.UUID) -> str | None:
+    """Return the room's current status, or None when the room does not exist.
+
+    Read-only and commit-free. A column-level select is deliberate: it always
+    issues SQL, so a fresh value is read on every frame instead of being
+    answered from the identity map (D-01: re-read per ``code_update``).
+    """
+    result = await session.execute(select(Room.status).where(Room.id == room_id))
+    return result.scalar_one_or_none()
