@@ -1,3 +1,5 @@
 export { Button } from './Button'
+export { EmptyState } from './EmptyState'
 export { Spinner } from './Spinner'
+export { StatusBadge } from './StatusBadge'
 export { TextField } from './TextField'
