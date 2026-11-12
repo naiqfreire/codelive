@@ -1030,3 +1030,124 @@ def test_owner_reconnect_after_edit_receives_new_content_byte_for_byte(ws_client
             payload.encode("utf-8")
         ).hexdigest()
 
+# ---------------------------------------------------------------------------
+# 04-04 Task 1: rejection-log evidence + accepted-path OBS-04 assertion pins
+# ---------------------------------------------------------------------------
+
+
+async def test_oversize_code_update_leaves_existing_stored_content_unchanged(
+    ws_client, db_session
+):
+    """D-02/QUAL-03: an oversize update is refused before any DB access, so a
+
+    pre-existing room_code_state row keeps its exact prior content.
+    """
+    from app.features.live_code.service import MAX_CODE_BYTES
+
+    room, owner = _make_room_with_owner(ws_client, "ws-oversize-unchanged@example.com")
+    await _seed_code_state(db_session, room["id"], "before")
+    payload = "A" * MAX_CODE_BYTES + _OVERSIZE_SENTINEL
+    with _connect_owner(ws_client, room["id"], owner) as ws:
+        _join(ws, 1)
+        ws.send_json({"type": "code_update", "content": payload})
+        frame = ws.receive_json()
+        assert frame["error"]["code"] == "validation_error"
+        assert "256 KiB" in frame["error"]["message"]
+        # socket stays open after the rejection: a join still succeeds
+        ws.send_json({"type": "join"})
+        join_frame = ws.receive_json()
+        assert join_frame["type"] == "presence"
+    row = (
+        await db_session.execute(
+            text("SELECT content FROM room_code_state WHERE room_id = :room_id"),
+            {"room_id": uuid.UUID(room["id"])},
+        )
+    ).one()
+    assert row.content == "before"  # byte-for-byte unchanged
+
+
+async def test_accepted_and_rejected_paths_never_log_content_cookie_or_nickname(
+    ws_client, capsys, db_session
+):
+    """OBS-04/D-03: captured logs for both paths carry ids/hashes/sizes only —
+
+    never raw content, never a session/anon cookie value, never a nickname.
+    """
+    import hashlib
+    import json
+
+    from app.features.live_code.service import MAX_CODE_BYTES
+    from app.shared.logging import configure_logging
+
+    configure_logging("INFO")
+    capsys.readouterr()
+    accepted_sentinel = "accepted_path_secret_sentinel_77"
+    rejected_sentinel = "rejected_path_secret_sentinel_88"
+    oversize_payload = "B" * MAX_CODE_BYTES + rejected_sentinel
+
+    room, owner = _make_room_with_owner(ws_client, "ws-bothpaths-owner@example.com")
+    ws_client.cookies.clear()
+    resp = ws_client.post(
+        f"/api/rooms/{room['id']}/join",
+        json={"code": room["access_code"], "anonymous": True, "nickname": "SentinelNick"},
+    )
+    assert resp.status_code == 200
+    anon = ws_client.cookies.get("codelive_anon")
+    assert anon
+    with _connect_owner(ws_client, room["id"], owner) as ws_owner:
+        _join(ws_owner, 1)
+        with _connect(ws_client, room["id"], anon) as ws_anon:
+            _join(ws_anon, 2)
+            ws_owner.receive_json()  # presence count == 2 broadcast
+            ws_owner.send_json({"type": "code_update", "content": accepted_sentinel})
+            assert ws_owner.receive_json()["type"] == "code_update"
+            assert ws_anon.receive_json()["type"] == "code_update"
+            # rejected (oversize) path on the same socket
+            ws_owner.send_json({"type": "code_update", "content": oversize_payload})
+            rejected_frame = ws_owner.receive_json()
+            assert rejected_frame["error"]["code"] == "validation_error"
+            assert "256 KiB" in rejected_frame["error"]["message"]
+            # socket stays open after the rejection: a join still succeeds
+            ws_owner.send_json({"type": "join"})
+            assert ws_owner.receive_json()["type"] == "presence"
+        # ws_anon closed; drain the disconnect presence broadcast on ws_owner
+        assert ws_owner.receive_json()["count"] == 1
+    lines = _capsys_json_lines(capsys)
+    assert lines, "expected captured log lines"
+    blob = "\n".join(json.dumps(l) for l in lines)
+    # raw content from neither path appears
+    assert accepted_sentinel not in blob
+    assert rejected_sentinel not in blob
+    # credentials and nicknames never appear
+    assert owner not in blob
+    assert anon not in blob
+    assert "SentinelNick" not in blob
+    assert "ws-bothpaths-owner@example.com" not in blob
+    events = {l["event"]: l for l in lines if "event" in l}
+    # accepted path: code_update carries room_id and content_hash (OBS-04)
+    assert "code_update" in events
+    assert events["code_update"]["room_id"] == room["id"]
+    assert (
+        events["code_update"]["content_hash"]
+        == hashlib.sha256(accepted_sentinel.encode("utf-8")).hexdigest()
+    )
+    assert "content" not in events["code_update"]
+    # rejected path: code_update_rejected carries the D-03 fields, never content
+    assert "code_update_rejected" in events
+    rejected = events["code_update_rejected"]
+    assert rejected["room_id"] == room["id"]
+    assert rejected["user_id"]
+    assert rejected["size_bytes"] == len(oversize_payload.encode("utf-8"))
+    assert (
+        rejected["content_hash"]
+        == hashlib.sha256(oversize_payload.encode("utf-8")).hexdigest()
+    )
+    assert "content" not in rejected
+    # stored content is the accepted one (rejected path wrote nothing)
+    row = (
+        await db_session.execute(
+            text("SELECT content FROM room_code_state WHERE room_id = :room_id"),
+            {"room_id": uuid.UUID(room["id"])},
+        )
+    ).one()
+    assert row.content == accepted_sentinel
