@@ -134,8 +134,10 @@ describe('useRoomConnection', () => {
       latestSocket().open()
       latestSocket().receive({
         type: 'snapshot',
-        code: 'print(1)',
+        room_id: 'room-1',
+        content: 'print(1)',
         language: 'python',
+        content_hash: 'sha256:abc',
         request_id: 'req-2',
       })
     })
@@ -147,19 +149,38 @@ describe('useRoomConnection', () => {
       frame_type: 'snapshot',
       request_id: 'req-2',
       room_id: 'room-1',
+      content_hash: 'sha256:abc',
     })
     expect(typeof lastLog().timestamp).toBe('string')
   })
 
-  it('applies a code_update frame', () => {
+  it('applies a code_update frame and keeps the snapshot language', () => {
     const { result } = renderHook(() => useRoomConnection('room-1'))
 
     act(() => {
       latestSocket().open()
-      latestSocket().receive({ type: 'code_update', code: 'novo', request_id: 'req-3' })
+      latestSocket().receive({
+        type: 'snapshot',
+        content: '',
+        language: 'python',
+        content_hash: 'sha256:a',
+        request_id: 'req-2',
+      })
+      latestSocket().receive({
+        type: 'code_update',
+        content: 'novo',
+        content_hash: 'sha256:b',
+        request_id: 'req-3',
+      })
     })
 
     expect(result.current.code).toBe('novo')
+    expect(result.current.language).toBe('python')
+    expect(lastLog()).toMatchObject({
+      frame_type: 'code_update',
+      request_id: 'req-3',
+      content_hash: 'sha256:b',
+    })
   })
 
   it('surfaces an error frame without dropping the code', () => {
@@ -167,7 +188,12 @@ describe('useRoomConnection', () => {
 
     act(() => {
       latestSocket().open()
-      latestSocket().receive({ type: 'code_update', code: 'mantido', request_id: 'req-3' })
+      latestSocket().receive({
+        type: 'code_update',
+        content: 'mantido',
+        content_hash: 'sha256:c',
+        request_id: 'req-3',
+      })
       latestSocket().receive({
         error: { code: 'validation_error', message: 'Dados inválidos.', request_id: 'req-4' },
       })
@@ -200,7 +226,12 @@ describe('useRoomConnection', () => {
 
     act(() => {
       first.open()
-      first.receive({ type: 'code_update', code: 'preservado', request_id: 'req-5' })
+      first.receive({
+        type: 'code_update',
+        content: 'preservado',
+        content_hash: 'sha256:d',
+        request_id: 'req-5',
+      })
       first.drop()
     })
 

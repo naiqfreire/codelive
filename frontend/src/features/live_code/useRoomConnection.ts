@@ -153,6 +153,9 @@ export function useRoomConnection(
           room_id: activeRoomId,
           frame_type: frame.type,
           request_id: frame.requestId,
+          ...(frame.type === 'snapshot' || frame.type === 'code_update'
+            ? { content_hash: frame.contentHash }
+            : {}),
         })
 
         if (frame.type === 'presence') {
@@ -176,12 +179,23 @@ export function useRoomConnection(
           return
         }
 
-        setState((previous) => ({
-          ...previous,
-          code: frame.code,
-          language: frame.language ?? previous.language,
-          lastError: null,
-        }))
+        if (frame.type === 'snapshot') {
+          setState((previous) => ({
+            ...previous,
+            code: frame.content,
+            language: frame.language ?? previous.language,
+            lastError: null,
+          }))
+          return
+        }
+
+        if (frame.type === 'code_update') {
+          setState((previous) => ({
+            ...previous,
+            code: frame.content,
+            lastError: null,
+          }))
+        }
       }
 
       nextSocket.onerror = () => {

@@ -4,11 +4,9 @@ import { LANGUAGES } from '../rooms'
 /**
  * Mirror of the backend wire protocol (`backend/app/features/live_code/protocol.py`).
  *
- * The backend currently broadcasts `presence` and `error`. The `snapshot` and
- * `code_update` shapes are still owned by the real-time broadcast slice, so the
- * parser is deliberately defensive: it accepts `code` as a string and treats
- * everything else as optional. Invalid frames never throw — they become `null`
- * and the caller decides how to log them.
+ * Backend #31 owns the shapes: `snapshot` and `code_update` carry `content` and
+ * `content_hash`; only `snapshot` carries `language`. The parser is defensive:
+ * an invalid frame becomes `null` and the caller decides how to log it.
  */
 export type RoomRole = 'owner' | 'viewer'
 
@@ -24,15 +22,16 @@ export type PresenceFrame = {
 
 export type SnapshotFrame = {
   type: 'snapshot'
-  code: string
+  content: string
   language: RoomLanguage | null
+  contentHash: string | null
   requestId: string
 }
 
 export type CodeUpdateFrame = {
   type: 'code_update'
-  code: string
-  language: RoomLanguage | null
+  content: string
+  contentHash: string | null
   requestId: string
 }
 
@@ -106,20 +105,33 @@ function parsePresence(payload: Record<string, unknown>): PresenceFrame | null {
   }
 }
 
-function parseCodeFrame(
-  type: 'snapshot' | 'code_update',
-  payload: Record<string, unknown>,
-): SnapshotFrame | CodeUpdateFrame | null {
-  const code = readString(payload, 'code')
+function parseSnapshot(payload: Record<string, unknown>): SnapshotFrame | null {
+  const content = readString(payload, 'content')
 
-  if (code === null) {
+  if (content === null) {
     return null
   }
 
   return {
-    type,
-    code,
+    type: 'snapshot',
+    content,
     language: readLanguage(payload.language),
+    contentHash: readString(payload, 'content_hash'),
+    requestId: readString(payload, 'request_id') ?? '',
+  }
+}
+
+function parseCodeUpdate(payload: Record<string, unknown>): CodeUpdateFrame | null {
+  const content = readString(payload, 'content')
+
+  if (content === null) {
+    return null
+  }
+
+  return {
+    type: 'code_update',
+    content,
+    contentHash: readString(payload, 'content_hash'),
     requestId: readString(payload, 'request_id') ?? '',
   }
 }
@@ -161,8 +173,9 @@ export function parseRoomFrame(raw: unknown): ServerFrame | null {
     case 'presence':
       return parsePresence(payload)
     case 'snapshot':
+      return parseSnapshot(payload)
     case 'code_update':
-      return parseCodeFrame(payload.type, payload)
+      return parseCodeUpdate(payload)
     default:
       return null
   }

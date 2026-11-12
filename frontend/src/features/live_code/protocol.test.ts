@@ -28,42 +28,92 @@ describe('parseRoomFrame', () => {
     })
   })
 
-  it('parses a snapshot frame with a supported language', () => {
+  it('parses the backend snapshot frame', () => {
     const frame = parseRoomFrame({
       type: 'snapshot',
-      code: 'print(1)',
+      room_id: 'room-1',
+      content: "print('oi')",
       language: 'python',
+      content_hash: 'sha256:abc',
       request_id: 'req-2',
     })
 
     expect(frame).toEqual({
       type: 'snapshot',
-      code: 'print(1)',
+      content: "print('oi')",
       language: 'python',
+      contentHash: 'sha256:abc',
       requestId: 'req-2',
     })
   })
 
-  it('parses a code_update frame without a language', () => {
-    const frame = parseRoomFrame({ type: 'code_update', code: 'x', request_id: 'req-3' })
+  it('parses the backend code_update frame without a language', () => {
+    const frame = parseRoomFrame({
+      type: 'code_update',
+      room_id: 'room-1',
+      content: 'print(2)',
+      content_hash: 'sha256:def',
+      request_id: 'req-3',
+    })
 
     expect(frame).toEqual({
       type: 'code_update',
-      code: 'x',
-      language: null,
+      content: 'print(2)',
+      contentHash: 'sha256:def',
       requestId: 'req-3',
     })
   })
 
-  it('drops an unknown language but keeps the code', () => {
+  it('ignores a stray language on code_update', () => {
     const frame = parseRoomFrame({
-      type: 'snapshot',
-      code: 'x',
-      language: 'ruby',
+      type: 'code_update',
+      content: 'x',
+      language: 'java',
+      content_hash: 'h',
       request_id: 'req-4',
     })
 
-    expect(frame).toEqual({ type: 'snapshot', code: 'x', language: null, requestId: 'req-4' })
+    expect(frame).toEqual({
+      type: 'code_update',
+      content: 'x',
+      contentHash: 'h',
+      requestId: 'req-4',
+    })
+  })
+
+  it('tolerates a missing content_hash', () => {
+    const frame = parseRoomFrame({
+      type: 'snapshot',
+      content: 'x',
+      language: 'python',
+      request_id: 'req-5',
+    })
+
+    expect(frame).toEqual({
+      type: 'snapshot',
+      content: 'x',
+      language: 'python',
+      contentHash: null,
+      requestId: 'req-5',
+    })
+  })
+
+  it('drops an unknown language but keeps the content', () => {
+    const frame = parseRoomFrame({
+      type: 'snapshot',
+      content: 'x',
+      language: 'ruby',
+      content_hash: 'h',
+      request_id: 'req-6',
+    })
+
+    expect(frame).toEqual({
+      type: 'snapshot',
+      content: 'x',
+      language: null,
+      contentHash: 'h',
+      requestId: 'req-6',
+    })
   })
 
   it('parses the backend error envelope without a type field', () => {
@@ -71,7 +121,7 @@ describe('parseRoomFrame', () => {
       error: {
         code: 'validation_error',
         message: 'Dados inválidos.',
-        request_id: 'req-5',
+        request_id: 'req-7',
       },
     })
 
@@ -79,7 +129,7 @@ describe('parseRoomFrame', () => {
       type: 'error',
       code: 'validation_error',
       message: 'Dados inválidos.',
-      requestId: 'req-5',
+      requestId: 'req-7',
     })
   })
 
@@ -87,9 +137,11 @@ describe('parseRoomFrame', () => {
     ['malformed JSON', 'not-json'],
     ['null payload', null],
     ['unsupported frame type', { type: 'ping' }],
-    ['a snapshot without code', { type: 'snapshot', request_id: 'req' }],
-    ['a snapshot with a non-string code', { type: 'snapshot', code: 42 }],
-    ['a code_update without code', { type: 'code_update', request_id: 'req' }],
+    ['a snapshot without content', { type: 'snapshot', request_id: 'req' }],
+    ['a snapshot using the legacy code field', { type: 'snapshot', code: 'x', request_id: 'req' }],
+    ['a snapshot with a non-string content', { type: 'snapshot', content: 42 }],
+    ['a code_update without content', { type: 'code_update', request_id: 'req' }],
+    ['a code_update using the legacy code field', { type: 'code_update', code: 'x' }],
     [
       'a presence without count',
       { type: 'presence', room_id: 'r', role: 'viewer', request_id: 'r' },

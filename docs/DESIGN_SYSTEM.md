@@ -130,8 +130,8 @@ nesta fatia.
 - Sem quebra de linha: rolagem horizontal e vertical; altura mínima de 16 rem.
 - Sintaxe: extensões oficiais para Python, Java, C (`lang-cpp`), PHP e JavaScript, com
   `HighlightStyle` próprio.
-- Sincronização externa (snapshot): o documento só é substituído quando o conteúdo difere,
-  preservando o cursor quando não há mudança.
+- Sincronização externa (`snapshot`/`code_update`): aplica apenas o trecho que difere
+  (prefixo/sufixo comum preservados), mantendo cursor e seleção fora do trecho alterado.
 - `Tab` não é capturado pelo editor, preservando a navegação por teclado.
 - Exceção de token: as cores exigidas pelo CodeMirror ficam centralizadas em
   `features/live_code/editorTheme.ts`; o restante da interface usa apenas tokens Tailwind.
@@ -154,6 +154,8 @@ nesta fatia.
   300 ms; tentativas ilimitadas enquanto a página estiver aberta.
 - Durante a queda o último código recebido permanece visível; o `snapshot` seguinte atualiza o
   documento sem resetar o cursor (RNF04).
+- Cada frame recebido é registrado em log estruturado com `timestamp`, `request_id` e
+  `content_hash` (quando presente), para comparar estados.
 - Contagem de participantes com `aria-live="polite"` e plural/singular corretos.
 - Animação apenas com `motion-safe:`; `prefers-reduced-motion` desliga o pulso.
 
