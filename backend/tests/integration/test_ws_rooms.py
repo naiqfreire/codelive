@@ -1,7 +1,22 @@
-"""WS /api/ws/rooms/{room_id}: handshake, join, presence, leave."""
+"""WS /api/ws/rooms/{room_id}: handshake, join, presence, leave, snapshot."""
+import uuid
+
 import pytest
+from sqlalchemy import text
 
 pytestmark = pytest.mark.integration
+
+
+async def _seed_code_state(db_session, room_id, content):
+    """Insert a room_code_state row the way migration 0004 backfills them."""
+    await db_session.execute(
+        text(
+            "INSERT INTO room_code_state (id, room_id, content) "
+            "VALUES (:id, :room_id, :content)"
+        ),
+        {"id": uuid.uuid7(), "room_id": uuid.UUID(room_id), "content": content},
+    )
+    await db_session.commit()
 
 
 def _make_room(ws_client):
@@ -34,10 +49,13 @@ def _connect(ws_client, room_id, anon):
 
 
 def _join(ws, expected_count):
+    """Send join; expect presence first, then the joiner-only snapshot (D-07)."""
     ws.send_json({"type": "join"})
     frame = ws.receive_json()
     assert frame["type"] == "presence"
     assert frame["count"] == expected_count
+    snapshot = ws.receive_json()
+    assert snapshot["type"] == "snapshot"
     return frame
 
 
@@ -56,6 +74,9 @@ def test_anonymous_spectator_joins_and_gets_presence(ws_client):
         assert frame["count"] == 1
         assert frame["role"] == "viewer"
         assert frame["request_id"]
+        snapshot = ws.receive_json()
+        assert snapshot["type"] == "snapshot"
+        assert snapshot["room_id"] == room["id"]
 
 
 def _two_anon_spectators(ws_client):
@@ -110,6 +131,10 @@ def test_join_publishes_presence_once(ws_client):
             assert frame2["role"] == "viewer"
             assert frame2["room_id"] == room["id"]
             assert frame2["request_id"]
+            # drain ws2's joiner-only snapshot so the socket closes clean
+            snapshot2 = ws2.receive_json()
+            assert snapshot2["type"] == "snapshot"
+            assert snapshot2["room_id"] == room["id"]
             # the room broadcast carries count == 2 to the first socket, exactly once
             frame1b = ws1.receive_json()
             assert frame1b["type"] == "presence"
@@ -361,18 +386,64 @@ def test_unknown_type_is_refused_and_socket_stays_open(ws_client):
         _join(ws, 1)
 
 
-def test_no_snapshot_frame_after_join(ws_client):
-    room, _owner = _make_room_with_owner(ws_client, "ws-nosnap@example.com")
+def test_snapshot_follows_presence_on_join_and_rejoin_sends_presence_only(ws_client):
+    """D-04/D-07: initial join yields presence then snapshot (joiner only);
+
+    an idempotent re-join yields presence only (Phase 3 exclusion kept).
+    """
+    import hashlib
+
+    room, _owner = _make_room_with_owner(ws_client, "ws-snap@example.com")
     anon = _join_anonymously(ws_client, room)
     with ws_client.websocket_connect(
         f"/api/ws/rooms/{room['id']}",
         headers={"origin": _ORIGIN, "cookie": f"codelive_anon={anon}"},
     ) as ws:
-        frame = _join(ws, 1)
-        assert frame["type"] == "presence"  # the first frame is presence, never snapshot
-        # an idempotent re-join yields presence again — no snapshot in between
         ws.send_json({"type": "join"})
-        assert ws.receive_json()["type"] == "presence"
+        presence = ws.receive_json()
+        assert presence["type"] == "presence"  # presence first (D-07)
+        assert presence["count"] == 1
+        snapshot = ws.receive_json()
+        assert snapshot == {
+            "type": "snapshot",
+            "room_id": room["id"],
+            "content": "",
+            "language": "python",
+            "content_hash": hashlib.sha256(b"").hexdigest(),
+            "request_id": snapshot["request_id"],
+        }
+        assert snapshot["request_id"]
+        # idempotent re-join: presence only, no second snapshot
+        ws.send_json({"type": "join"})
+        frame = ws.receive_json()
+        assert frame["type"] == "presence"
+        assert frame["count"] == 1
+
+
+def test_snapshot_goes_to_joiner_only(ws_client):
+    """D-05/D-07: the snapshot is joiner-only; existing peers get presence only."""
+    room, owner = _make_room_with_owner(ws_client, "ws-joiner-only@example.com")
+    anon = _join_anonymously(ws_client, room)
+    with ws_client.websocket_connect(
+        f"/api/ws/rooms/{room['id']}",
+        headers={"origin": _ORIGIN, "cookie": f"codelive_session={owner}"},
+    ) as ws_owner:
+        _join(ws_owner, 1)
+        with ws_client.websocket_connect(
+            f"/api/ws/rooms/{room['id']}",
+            headers={"origin": _ORIGIN, "cookie": f"codelive_anon={anon}"},
+        ) as ws_anon:
+            ws_anon.send_json({"type": "join"})
+            presence = ws_anon.receive_json()
+            assert presence["type"] == "presence"
+            assert presence["count"] == 2
+            snapshot = ws_anon.receive_json()
+            assert snapshot["type"] == "snapshot"
+            assert snapshot["room_id"] == room["id"]
+            # the owner, already joined, receives only the presence broadcast
+            frame = ws_owner.receive_json()
+            assert frame["type"] == "presence"
+            assert frame["count"] == 2
 
 
 def test_room_a_traffic_never_reaches_room_b(ws_client):
@@ -574,3 +645,103 @@ def test_expired_anonymous_cookie_is_denied_401(ws_client, monkeypatch):
         401,
         "not_authenticated",
     )
+
+
+# ---------------------------------------------------------------------------
+# 04-02 Task 3: backfilled-room and reconnect snapshot coverage (LIVE-03)
+# ---------------------------------------------------------------------------
+
+_SHA256_EMPTY = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+
+async def test_backfilled_room_empty_snapshot(ws_client, db_session):
+    """A room whose room_code_state row came from the 0004 backfill emits a
+
+    valid snapshot with content == "" and content_hash == sha256(b"").
+    """
+    import hashlib
+
+    room, owner = _make_room_with_owner(ws_client, "ws-backfill@example.com")
+    await _seed_code_state(db_session, room["id"], "")
+    with ws_client.websocket_connect(
+        f"/api/ws/rooms/{room['id']}",
+        headers={"origin": _ORIGIN, "cookie": f"codelive_session={owner}"},
+    ) as ws:
+        ws.send_json({"type": "join"})
+        presence = ws.receive_json()
+        assert presence["type"] == "presence"
+        snapshot = ws.receive_json()
+        assert snapshot["type"] == "snapshot"
+        assert snapshot["room_id"] == room["id"]
+        assert snapshot["content"] == ""
+        assert snapshot["language"] == "python"
+        assert snapshot["content_hash"] == hashlib.sha256(b"").hexdigest()
+        assert snapshot["content_hash"] == _SHA256_EMPTY
+        assert snapshot["request_id"] == presence["request_id"]
+
+
+async def test_owner_reconnect_receives_persisted_state_byte_for_byte(
+    ws_client, db_session
+):
+    """Reconnect is the same code path: the snapshot is byte-for-byte equal
+
+    to the persisted room_code_state row on both connects.
+    """
+    import hashlib
+
+    payload = "# café\nprint('olá 🐍')\n"
+    room, owner = _make_room_with_owner(ws_client, "ws-reconnect@example.com")
+    await _seed_code_state(db_session, room["id"], payload)
+
+    def _join_and_get_snapshot(ws):
+        ws.send_json({"type": "join"})
+        ws.receive_json()  # presence
+        return ws.receive_json()  # snapshot
+
+    headers = {"origin": _ORIGIN, "cookie": f"codelive_session={owner}"}
+    with ws_client.websocket_connect(
+        f"/api/ws/rooms/{room['id']}", headers=headers
+    ) as ws:
+        snapshot1 = _join_and_get_snapshot(ws)
+    with ws_client.websocket_connect(
+        f"/api/ws/rooms/{room['id']}", headers=headers
+    ) as ws:
+        snapshot2 = _join_and_get_snapshot(ws)
+    for snapshot in (snapshot1, snapshot2):
+        assert snapshot["type"] == "snapshot"
+        assert snapshot["room_id"] == room["id"]
+        assert snapshot["content"] == payload  # byte-for-byte
+        assert snapshot["content_hash"] == hashlib.sha256(
+            payload.encode("utf-8")
+        ).hexdigest()
+        assert snapshot["language"] == "python"
+    # the row is unchanged by snapshots: content still the seeded payload
+    row = (
+        await db_session.execute(
+            text("SELECT content FROM room_code_state WHERE room_id = :room_id"),
+            {"room_id": uuid.UUID(room["id"])},
+        )
+    ).one()
+    assert row.content == payload
+
+
+async def test_room_without_state_row_gets_empty_snapshot(ws_client, db_session):
+    """Read-or-empty (D-13): a room with no room_code_state row at all still
+
+    emits a valid snapshot with content == "" and the empty-string hash.
+    """
+    import hashlib
+
+    room, owner = _make_room_with_owner(ws_client, "ws-norow@example.com")
+    with ws_client.websocket_connect(
+        f"/api/ws/rooms/{room['id']}",
+        headers={"origin": _ORIGIN, "cookie": f"codelive_session={owner}"},
+    ) as ws:
+        ws.send_json({"type": "join"})
+        ws.receive_json()  # presence
+        snapshot = ws.receive_json()
+        assert snapshot["type"] == "snapshot"
+        assert snapshot["room_id"] == room["id"]
+        assert snapshot["content"] == ""
+        assert snapshot["language"] == "python"
+        assert snapshot["content_hash"] == hashlib.sha256(b"").hexdigest()

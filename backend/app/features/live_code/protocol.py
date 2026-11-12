@@ -38,6 +38,18 @@ def parse_frame(raw: object) -> Frame:
     return Frame(type=frame_type)
 
 
+def snapshot_frame(room_id, content: str, language: str, content_hash: str, request_id: str) -> dict:
+    """Build the snapshot frame sent to the joiner only (D-04..D-07)."""
+    return {
+        "type": "snapshot",
+        "room_id": str(room_id),
+        "content": content,
+        "language": language,
+        "content_hash": content_hash,
+        "request_id": request_id,
+    }
+
+
 def presence_frame(room_id, count: int, role: str, request_id: str) -> dict:
     """Build the presence frame; role is the receiving socket's own role."""
     return {

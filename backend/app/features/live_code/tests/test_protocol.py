@@ -12,6 +12,7 @@ from app.features.live_code.protocol import (
     error_frame,
     parse_frame,
     presence_frame,
+    snapshot_frame,
 )
 from app.shared.errors import ERROR_MESSAGES
 
@@ -91,14 +92,52 @@ def test_error_frame_unknown_code_raises_key_error():
         error_frame("not_a_real_code", "req-1")
 
 
-def test_no_snapshot_builder():
-    import inspect
+def test_frame_type_union_includes_snapshot_outbound():
+    # D-06: `snapshot` is an outbound frame type in the union.
+    assert typing.get_args(protocol.FrameType) == (
+        "join",
+        "code_update",
+        "presence",
+        "snapshot",
+        "error",
+    )
 
-    for name, obj in vars(protocol).items():
-        if inspect.isfunction(obj):
-            assert "snapshot" not in name
-            assert "snapshot" not in inspect.getsource(obj)
-    assert typing.get_args(protocol.FrameType) == ("join", "code_update", "presence", "snapshot", "error")
+
+def test_snapshot_frame_shape():
+    room_id = uuid.uuid4()
+    frame = snapshot_frame(room_id, "print('x')", "python", "deadbeef", "req-1")
+    assert set(frame) == {
+        "type",
+        "room_id",
+        "content",
+        "language",
+        "content_hash",
+        "request_id",
+    }
+    assert frame == {
+        "type": "snapshot",
+        "room_id": str(room_id),
+        "content": "print('x')",
+        "language": "python",
+        "content_hash": "deadbeef",
+        "request_id": "req-1",
+    }
+    # str room_id is accepted and echoed verbatim
+    assert snapshot_frame(str(room_id), "", "python", "abc", "req-2") == {
+        "type": "snapshot",
+        "room_id": str(room_id),
+        "content": "",
+        "language": "python",
+        "content_hash": "abc",
+        "request_id": "req-2",
+    }
+    assert not {"nickname", "user_id", "users", "roster"} & set(frame)
+
+
+def test_snapshot_frame_empty_content_is_valid():
+    frame = snapshot_frame(uuid.uuid4(), "", "python", "empty-hash", "req-1")
+    assert frame["content"] == ""
+    assert frame["language"] == "python"
 
 
 def test_module_purity():

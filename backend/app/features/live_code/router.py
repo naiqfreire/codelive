@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisco
 from itsdangerous import BadSignature, SignatureExpired
 
 from app.features.auth import public as auth
-from app.features.live_code import protocol
+from app.features.live_code import protocol, service
 from app.features.live_code.hub import Connection, hub
 from app.features.rooms import public as rooms_public
 from app.shared.config import Settings, get_settings
@@ -32,6 +32,7 @@ class Admission:
     request_id: str
     role: str
     user: "User | None"
+    language: str
 
 
 async def ws_session_context(
@@ -80,11 +81,11 @@ async def admit(
                     anonymous_session_id = None
         if user is None and anonymous_session_id is None:
             raise HTTPException(status_code=401, detail=ErrorCode.NOT_AUTHENTICATED)
-        _room, role = await rooms_public.authorize_room_identity(
+        room, role = await rooms_public.authorize_room_identity(
             session, room_id, user, anonymous_session_id
         )
     # Session closes here, before accept().
-    return Admission(request_id=request_id, role=role, user=user)
+    return Admission(request_id=request_id, role=role, user=user, language=room.language)
 
 
 @router.websocket("/rooms/{room_id}")
@@ -149,6 +150,21 @@ async def room_channel(
                     lambda recipient: protocol.presence_frame(
                         room_id, count, recipient.role, recipient.request_id
                     ),
+                )
+                # D-04/D-07: presence first, then the joiner-only snapshot.
+                # Short-lived session just for the read; closed before the
+                # snapshot is sent. Peers never receive the snapshot (D-05).
+                async with get_sessionmaker()() as session:
+                    state = await service.read_current_state(session, room_id)
+                    content = state.content if state is not None else ""
+                await websocket.send_json(
+                    protocol.snapshot_frame(
+                        room_id,
+                        content,
+                        admission.language,
+                        service.content_hash(content),
+                        admission.request_id,
+                    )
                 )
     except WebSocketDisconnect:
         pass
