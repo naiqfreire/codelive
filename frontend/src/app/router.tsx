@@ -2,12 +2,13 @@ import { lazy, Suspense } from 'react'
 import type { ReactNode } from 'react'
 import { createBrowserRouter, Navigate } from 'react-router-dom'
 import type { RouteObject } from 'react-router-dom'
+import { GuestRoute, ProtectedRoute } from '../features/auth'
 import { AppShell } from './layouts/AppShell'
 import { AuthLayout } from './layouts/AuthLayout'
 import { RouteFallback } from './RouteFallback'
 
-const LoginPage = lazy(() => import('./pages/LoginPage'))
-const RegisterPage = lazy(() => import('./pages/RegisterPage'))
+const LoginRoute = lazy(() => import('./routes/LoginRoute'))
+const RegisterRoute = lazy(() => import('./routes/RegisterRoute'))
 
 // The fixture chunk is only reachable in development, so it never enters the
 // production bundle.
@@ -28,20 +29,30 @@ function withSuspense(element: ReactNode) {
 export const routes: RouteObject[] = [
   {
     path: '/',
-    element: <AuthLayout />,
+    element: <GuestRoute />,
     children: [
-      { index: true, element: <Navigate to="/login" replace /> },
-      { path: 'login', element: withSuspense(<LoginPage />) },
-      { path: 'register', element: withSuspense(<RegisterPage />) },
+      {
+        element: <AuthLayout />,
+        children: [
+          { index: true, element: <Navigate to="/login" replace /> },
+          { path: 'login', element: withSuspense(<LoginRoute />) },
+          { path: 'register', element: withSuspense(<RegisterRoute />) },
+        ],
+      },
     ],
   },
   {
-    path: '/rooms',
-    element: <AppShell />,
+    element: <ProtectedRoute />,
     children: [
-      { index: true, element: withSuspense(<RoomListPage />) },
-      { path: ':roomId', element: withSuspense(<OwnerRoomPage />) },
-      { path: ':roomId/view', element: withSuspense(<SpectatorRoomPage />) },
+      {
+        path: '/rooms',
+        element: <AppShell />,
+        children: [
+          { index: true, element: withSuspense(<RoomListPage />) },
+          { path: ':roomId', element: withSuspense(<OwnerRoomPage />) },
+          { path: ':roomId/view', element: withSuspense(<SpectatorRoomPage />) },
+        ],
+      },
     ],
   },
   { path: '*', element: <Navigate to="/login" replace /> },
