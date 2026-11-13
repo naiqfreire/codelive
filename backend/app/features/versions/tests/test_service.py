@@ -23,6 +23,9 @@ class _StubSession:
         self._fail_commit = fail_commit
         self.executed = []
         self.commit_calls = 0
+        self.new = set()
+        self.dirty = set()
+        self.deleted = set()
 
     async def execute(self, statement):
         self.executed.append(statement)
@@ -129,3 +132,85 @@ async def test_no_log_when_commit_fails(capsys):
 
     lines = [l for l in _ndjson_lines(capsys) if l.get("event") == "versions_purged"]
     assert lines == []
+
+
+async def test_purge_rejects_session_with_pending_state():
+    configure_logging("INFO")
+    from app.features.versions import service
+
+    session = _StubSession(rowcount=0)
+    session.new = {object()}
+    with pytest.raises(ValueError, match="pending"):
+        await service.purge_expired_versions(session, now=BASE_NOW)
+    assert session.executed == []
+    assert session.commit_calls == 0
+
+
+async def test_purge_rejects_session_with_pending_dirty_objects():
+    configure_logging("INFO")
+    from app.features.versions import service
+
+    session = _StubSession(rowcount=0)
+    session.dirty = {object()}
+    with pytest.raises(ValueError, match="pending"):
+        await service.purge_expired_versions(session, now=BASE_NOW)
+    assert session.executed == []
+    assert session.commit_calls == 0
+
+
+async def test_purge_rejects_session_with_pending_deletes():
+    configure_logging("INFO")
+    from app.features.versions import service
+
+    session = _StubSession(rowcount=0)
+    session.deleted = {object()}
+    with pytest.raises(ValueError, match="pending"):
+        await service.purge_expired_versions(session, now=BASE_NOW)
+    assert session.executed == []
+    assert session.commit_calls == 0
+
+
+async def test_purge_logs_failure_and_reraises(capsys):
+    configure_logging("INFO")
+    from app.features.versions import service
+
+    session = _StubSession(rowcount=3, fail_commit=True)
+    with pytest.raises(RuntimeError):
+        await service.purge_expired_versions(session, now=BASE_NOW)
+
+    lines = _ndjson_lines(capsys)
+    failed = [l for l in lines if l.get("event") == "versions_purge_failed"]
+    assert len(failed) == 1
+    assert failed[0]["duration_ms"] >= 0
+    assert uuid.UUID(failed[0]["request_id"]).version == 7
+    assert failed[0]["error_type"] == "RuntimeError"
+    assert "boom" not in json.dumps(failed[0])
+    assert [l for l in lines if l.get("event") == "versions_purged"] == []
+
+
+async def test_purge_failure_on_execute_also_logs(capsys):
+    configure_logging("INFO")
+    from app.features.versions import service
+
+    class _FailingExecuteSession(_StubSession):
+        async def execute(self, statement):
+            raise RuntimeError("db gone")
+
+    session = _FailingExecuteSession(rowcount=0)
+    with pytest.raises(RuntimeError):
+        await service.purge_expired_versions(session, now=BASE_NOW)
+
+    lines = _ndjson_lines(capsys)
+    assert [l for l in lines if l.get("event") == "versions_purge_failed"]
+    assert [l for l in lines if l.get("event") == "versions_purged"] == []
+    assert session.commit_calls == 0
+
+
+async def test_purge_empty_request_id_is_rejected(capsys):
+    configure_logging("INFO")
+    from app.features.versions import service
+
+    session = _StubSession(rowcount=0)
+    with pytest.raises(ValueError, match="request_id"):
+        await service.purge_expired_versions(session, request_id="", now=BASE_NOW)
+    assert session.executed == []
