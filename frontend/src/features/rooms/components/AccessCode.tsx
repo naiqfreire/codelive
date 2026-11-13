@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Button, TextField } from '../../../shared/components'
 import { ACCESS_CODE_LENGTH, normalizeAccessCode } from '../accessCode'
+import { COPIED_MESSAGE, COPY_FAILURE_MESSAGE, copyText } from '../clipboard'
 
 type AccessCodeInputProps = {
   mode: 'input'
@@ -22,8 +23,6 @@ export type AccessCodeProps = AccessCodeInputProps | AccessCodeDisplayProps
 
 const DEFAULT_LABEL = 'Código de acesso'
 const DEFAULT_INPUT_HINT = '6 caracteres: letras maiúsculas e números.'
-const COPIED_MESSAGE = 'Copiado!'
-const COPY_FAILURE_MESSAGE = 'Não foi possível copiar. Selecione o código e copie manualmente.'
 
 export function AccessCode(props: AccessCodeProps) {
   if (props.mode === 'display') {
@@ -55,16 +54,7 @@ function AccessCodeDisplay({ code, label = DEFAULT_LABEL }: Omit<AccessCodeDispl
   const [feedback, setFeedback] = useState('')
 
   async function handleCopy() {
-    try {
-      if (!navigator.clipboard?.writeText) {
-        throw new Error('clipboard-unavailable')
-      }
-
-      await navigator.clipboard.writeText(code)
-      setFeedback(COPIED_MESSAGE)
-    } catch {
-      setFeedback(COPY_FAILURE_MESSAGE)
-    }
+    setFeedback((await copyText(code)) ? COPIED_MESSAGE : COPY_FAILURE_MESSAGE)
   }
 
   return (

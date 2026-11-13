@@ -176,6 +176,52 @@ são apresentacionais e recebem `onSubmit`; a composição com a API vive em
 - Contagem de participantes com `aria-live="polite"` e plural/singular corretos.
 - Animação apenas com `motion-safe:`; `prefers-reduced-motion` desliga o pulso.
 
+### 6.7 Tela "Minhas salas" (#17)
+
+Rota `/rooms`, composta por `app/routes/RoomListRoute.tsx` (auth + API + cache) e
+`app/pages/RoomListPage.tsx` (apresentação). Lista apenas as salas do dono, mais recente primeiro,
+sem a aba "Participei" nesta entrega.
+
+- **Card de sala** (`features/rooms/components/RoomCard.tsx`): código como título
+  (`font-mono`, `tracking`, `select-all`), `StatusBadge` com texto ("Aberta"/"Encerrada"),
+  linguagem e data de criação. Ações em ordem visual e com nomes acessíveis que incluem o código
+  (`sr-only`):
+  1. "Abrir sala" (link, `bg-surface`);
+  2. "Copiar" (secundário) — sempre disponível;
+  3. "Regenerar" (secundário) — apenas sala aberta;
+  4. "Encerrar" (destrutivo) — apenas sala aberta.
+  Alvos ≥ 44 px, `gap-2` e quebra de linha no mobile.
+- **Copiar código:** `navigator.clipboard.writeText`; sucesso anuncia "Copiado!" em
+  `role="status" aria-live="polite"`. Sem Clipboard API ou com permissão negada, mostra
+  "Não foi possível copiar. Selecione o código e copie manualmente." e o código continua
+  selecionável.
+- **Criar sala:** o botão "Nova sala" (header) e o "Criar sala" (estado vazio) abrem o mesmo
+  diálogo, com `LanguageSelector` (Python padrão), descrição do código automático, "Criar sala" e
+  "Cancelar". Durante o envio o botão fica `aria-busy`/"Criando…", tudo é desabilitado e ESC/
+  backdrop não fecham. Falha mantém o diálogo aberto com `role="alert"`; sucesso fecha e anuncia
+  "Sala criada. Código de acesso X.".
+- **Encerrar (confirmação):** título "Encerrar sala K7M2QX?", aviso de que a sala não reabre,
+  confirmação na variante destrutiva "Encerrar sala". Sucesso troca o badge para "Encerrada",
+  remove "Regenerar"/"Encerrar" e anuncia "Sala K7M2QX encerrada.".
+- **Regenerar (confirmação):** título "Regenerar código de acesso?", aviso de que o código
+  anterior deixa de funcionar, confirmação primária "Regenerar código". Sucesso exibe o novo
+  código e anuncia "Novo código de acesso: X. O código anterior não funciona mais.".
+- **Botão destrutivo:** `bg-destructive` com texto escuro (`text-accent-foreground`, ≈ 4.5:1).
+  A ação nunca é indicada só pela cor; o rótulo diz o que acontece.
+- **Diálogos** (`Dialog`/`ConfirmDialog`/`CreateRoomDialog`): `role="dialog"`,
+  `aria-modal="true"`, `aria-labelledby`/`aria-describedby`, foco inicial em "Cancelar", `Tab`
+  preso ao diálogo, ESC/backdrop fecham quando não há envio em andamento e o foco volta ao
+  gatilho (ou ao título da página quando a ação some, como em "Encerrar").
+- **Estados:** carregando (`role="status"` "Carregando salas…" mantendo o header), vazio
+  (`EmptyState` + "Criar sala"), erro sem dados (`role="alert"` + "Tentar novamente" ou
+  "Entrar novamente" em 401) e erro com cache (lista permanece + banner `role="alert"` com
+  retry).
+- **Cache (SPEC §10):** TanStack Query com `staleTime` 30 s, `gcTime` 24 h e persistência em
+  `localStorage` apenas de consultas `rooms` bem-sucedidas. A chave inclui o `userId`, e o cache
+  (memória + armazenado) é limpo ao sair ou trocar de usuário. O token de sessão continua em
+  cookie `httpOnly` e nunca entra no cache.
+- **Responsivo** em 375, 768, 1024 e 1440 px.
+
 ## 7. Checklist de entrega
 
 - [ ] Nenhum emoji como ícone; SVG com `aria-hidden` quando decorativo.
