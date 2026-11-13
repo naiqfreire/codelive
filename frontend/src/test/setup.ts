@@ -22,4 +22,5 @@ if (BaseRequest) {
 
 afterEach(() => {
   cleanup()
+  localStorage.clear()
 })
