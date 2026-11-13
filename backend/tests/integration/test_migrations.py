@@ -152,7 +152,7 @@ async def test_room_code_state_backfill_and_reversibility(scratch_url):
                     {"id": rid, "owner": user_id, "code": code},
                 )
 
-        # Upgrade to head (0004): table created + backfill runs.
+        # Upgrade to head: 0004 runs (table created + backfill), then 0005.
         result = _alembic("upgrade", "head", url=scratch_url)
         assert result.returncode == 0, result.stdout + result.stderr
 
@@ -166,8 +166,8 @@ async def test_room_code_state_backfill_and_reversibility(scratch_url):
         assert by_room[room_a] == ""
         assert by_room[room_b] == ""
 
-        # downgrade -1 drops only room_code_state.
-        result = _alembic("downgrade", "-1", url=scratch_url)
+        # downgrade to 0003 drops 0005 (code_versions) and 0004 (room_code_state).
+        result = _alembic("downgrade", "0003", url=scratch_url)
         assert result.returncode == 0, result.stdout + result.stderr
         tables = await _table_names(scratch_url)
         assert "room_code_state" not in tables
@@ -300,3 +300,123 @@ async def test_room_code_state_upgrade_downgrade_empty_db(scratch_url):
     assert result.returncode == 0, result.stdout + result.stderr
     tables = await _table_names(scratch_url)
     assert "room_code_state" in tables
+
+
+async def test_code_versions_upgrade_downgrade_empty_db(scratch_url):
+    """Revision 0005 is reversible on an empty database and passes alembic check."""
+    result = _alembic("downgrade", "base", url=scratch_url)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    result = _alembic("upgrade", "head", url=scratch_url)
+    assert result.returncode == 0, result.stdout + result.stderr
+    tables = await _table_names(scratch_url)
+    assert {"users", "rooms", "room_members", "room_code_state", "code_versions"} <= tables
+
+    result = _alembic("downgrade", "-1", url=scratch_url)
+    assert result.returncode == 0, result.stdout + result.stderr
+    tables = await _table_names(scratch_url)
+    assert "code_versions" not in tables
+    assert {"users", "rooms", "room_members", "room_code_state"} <= tables
+
+    result = _alembic("upgrade", "head", url=scratch_url)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    result = _alembic("check", url=scratch_url)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "No new upgrade operations detected" in result.stdout
+
+
+async def test_code_versions_columns(scratch_url):
+    """Lock the exact SPEC §6 column contract created by revision 0005."""
+    result = _alembic("downgrade", "base", url=scratch_url)
+    assert result.returncode == 0, result.stdout + result.stderr
+    result = _alembic("upgrade", "head", url=scratch_url)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    engine = create_async_engine(scratch_url, isolation_level="AUTOCOMMIT")
+    try:
+        async with engine.connect() as conn:
+            rows = (
+                await conn.execute(
+                    text(
+                        "SELECT column_name, data_type, character_maximum_length, "
+                        "is_nullable, column_default FROM information_schema.columns "
+                        "WHERE table_schema = 'public' AND table_name = 'code_versions'"
+                    )
+                )
+            ).all()
+            cols = {row[0]: row for row in rows}
+            assert set(cols) == {
+                "id",
+                "room_id",
+                "content",
+                "language",
+                "author_id",
+                "created_at",
+            }
+            assert cols["id"][1] == "uuid" and cols["id"][3] == "NO"
+            assert cols["room_id"][1] == "uuid" and cols["room_id"][3] == "NO"
+            assert cols["content"][1] == "text" and cols["content"][3] == "NO"
+            assert cols["language"][1] == "character varying"
+            assert cols["language"][2] == 20 and cols["language"][3] == "NO"
+            assert cols["author_id"][1] == "uuid" and cols["author_id"][3] == "YES"
+            assert cols["created_at"][1] == "timestamp with time zone"
+            assert cols["created_at"][3] == "NO"
+            assert "now()" in cols["created_at"][4]
+    finally:
+        await engine.dispose()
+
+
+async def test_code_versions_foreign_keys(scratch_url):
+    """FK actions: room_id CASCADE (D-09), author_id SET NULL (D-10)."""
+    result = _alembic("downgrade", "base", url=scratch_url)
+    assert result.returncode == 0, result.stdout + result.stderr
+    result = _alembic("upgrade", "head", url=scratch_url)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    engine = create_async_engine(scratch_url, isolation_level="AUTOCOMMIT")
+    try:
+        async with engine.connect() as conn:
+            rows = (
+                await conn.execute(
+                    text(
+                        "SELECT conname, confdeltype FROM pg_constraint "
+                        "WHERE conrelid = 'code_versions'::regclass AND contype = 'f'"
+                    )
+                )
+            ).all()
+            fks = {row[0]: row[1] for row in rows}
+            assert fks == {
+                "fk_code_versions_room_id_rooms": "c",  # 'c' = CASCADE
+                "fk_code_versions_author_id_users": "n",  # 'n' = SET NULL
+            }
+    finally:
+        await engine.dispose()
+
+
+async def test_code_versions_indexes(scratch_url):
+    """D-06: composite (room_id, created_at DESC) and standalone created_at."""
+    result = _alembic("downgrade", "base", url=scratch_url)
+    assert result.returncode == 0, result.stdout + result.stderr
+    result = _alembic("upgrade", "head", url=scratch_url)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    engine = create_async_engine(scratch_url, isolation_level="AUTOCOMMIT")
+    try:
+        async with engine.connect() as conn:
+            rows = (
+                await conn.execute(
+                    text(
+                        "SELECT indexname, indexdef FROM pg_indexes "
+                        "WHERE tablename = 'code_versions'"
+                    )
+                )
+            ).all()
+            indexes = {row[0]: row[1] for row in rows}
+            assert "ix_code_versions_created_at" in indexes
+            assert "ix_code_versions_room_id_created_at" in indexes
+            assert "(room_id, created_at DESC)" in indexes[
+                "ix_code_versions_room_id_created_at"
+            ]
+    finally:
+        await engine.dispose()
