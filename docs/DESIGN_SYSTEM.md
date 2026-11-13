@@ -83,11 +83,12 @@ Código de acesso de **6 caracteres**, maiúsculos, sem ambíguos
 `backend/app/features/rooms/service.py`), por exemplo `K7M2QX`.
 Implementação em `features/rooms/components/AccessCode.tsx` + `features/rooms/accessCode.ts`.
 
-- **Modo display (dono):** código em `font-mono`, `tracking-[0.2em]`, botão "Copiar" com feedback
+- **Modo display (dono):** código em `font-mono`, `tracking-[0.3em]`, botão "Copiar" com feedback
   visual e `aria-live="polite"` ("Copiado!"). Fallback sem Clipboard API: selecionar o texto e
   orientar a cópia manual.
 - **Modo input (espectador):** campo único, `inputMode="text"`, `autoComplete="one-time-code"`,
-  normalização para maiúsculas e limite de 6 caracteres; mensagem de erro junto ao campo.
+  `font-mono tracking-[0.2em]`, normalização para maiúsculas e limite de 6 caracteres; mensagem de
+  erro junto ao campo.
 - Rótulo visível, texto de apoio e foco visível.
 - Nunca usar apenas placeholder como rótulo.
 
@@ -175,6 +176,56 @@ são apresentacionais e recebem `onSubmit`; a composição com a API vive em
   `content_hash` (quando presente), para comparar estados.
 - Contagem de participantes com `aria-live="polite"` e plural/singular corretos.
 - Animação apenas com `motion-safe:`; `prefers-reduced-motion` desliga o pulso.
+
+### 6.7 Modal
+
+Componente `Modal` em `features/membership/components/Modal.tsx`. Enquanto um segundo slice não
+precisar dele, ele fica na fatia de membership (regra de `shared/` do `AGENTS.md`).
+
+- **Estrutura:** overlay `fixed inset-0 z-50` com fundo `bg-background/80`; painel central
+  `max-w-md`, `bg-surface`, `border border-border`, `rounded-xl`, `p-6`, `max-h-[90vh]` com rolagem
+  interna (o `body` não rola).
+- **Semântica:** `role="dialog"` + `aria-modal="true"` + `aria-labelledby` apontando para o título.
+  A descrição, quando existe, entra em `aria-describedby`.
+- **Overlay próprio, não `<dialog>` nativo:** o jsdom usado nos testes não implementa
+  `showModal()`. Com o overlay o foco é verificável por teste, e é justamente o comportamento que
+  quebra sem ninguém notar.
+- **Foco:** ao abrir, o primeiro elemento focável recebe o foco; `Tab` no último volta ao primeiro e
+  `Shift+Tab` no primeiro vai ao último, sempre dentro do painel. Ao fechar, o foco volta ao
+  elemento que abriu o modal.
+- **Fechamento:** `Escape`, clique no backdrop e botão "Fechar". Clique no painel não fecha. O botão
+  "Fechar" tem nome acessível (`aria-label`), alvo `size-11` (44 px) e fica por último no DOM para
+  não roubar o foco inicial do primeiro campo.
+- **Scroll:** `document.body.style.overflow = 'hidden'` enquanto aberto, restaurado ao desmontar.
+- **Sem animação de entrada**, portanto nada a desligar em `prefers-reduced-motion`.
+
+### 6.8 Modal de entrada na sala (#26)
+
+`JoinRoomModal` em `features/membership/components/JoinRoomModal.tsx`, passo 3 do fluxo do
+espectador (RNF03). Compõe o `Modal` da §6.7 e o `TextField` de `shared/`.
+
+- **Nickname é obrigatório, inclusive na entrada anônima.** "Anônimo" significa *sem conta* (sem
+  e-mail, sem senha), não *sem nome*: a presença precisa de um nome para identificar quem está na
+  sala, e o backend responde 422 quando o anônimo chega sem nickname
+  (`backend/app/features/rooms/service.py`). Não torne o campo opcional "para simplificar" — isso
+  quebra a integração e viola a constraint `nickname_required` de `room_members`.
+- **Limite de 60 caracteres**, espelhando `JoinRequest.nickname` (`max_length=60`) e
+  `room_members.nickname` (`String(60)`). O valor é aparado (`trim`) antes de validar e de enviar.
+- **Contagem por code point** (`Array.from(...).length`), porque o backend conta caracteres em
+  Python: um emoji conta 1 lá e 2 em unidades UTF-16 no JavaScript.
+- **Sem `maxLength` no input.** Com ele o navegador truncaria o texto e o erro de tamanho nunca
+  apareceria; a validação é do formulário, não do campo.
+- **Quando valida:** no envio; depois do primeiro erro, a cada tecla, e o erro some assim que o
+  valor fica válido. Não existe mínimo inventado — o backend aceita 1 caractere.
+- **Erro:** junto ao campo, via `TextField` (`role="alert"`, `aria-invalid`, `aria-describedby`).
+  Texto sempre presente, nunca só cor.
+- **Duas ações:** "Entrar na sala" (primário, `type="submit"`) e "Entrar sem conta" (secundário).
+  As duas validam o nickname; a diferença é apenas a flag `anonymous` enviada.
+- **Envio em andamento:** `isSubmitting` desabilita o campo e as duas ações.
+- **Contrato:** o modal chama `onJoin({ nickname, anonymous })` e não navega nem chama a API — a
+  página decide o destino. Quando `accessCode` é informado, o código aparece na descrição.
+- **Revisão visual:** a página `/rooms/join` existe apenas em `import.meta.env.DEV`; a rota real do
+  espectador pertence ao fluxo de entrada.
 
 ## 7. Checklist de entrega
 
