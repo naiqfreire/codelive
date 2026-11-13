@@ -1,18 +1,39 @@
 import { render, screen } from '@testing-library/react'
+import { afterEach, beforeEach, vi } from 'vitest'
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
 import { AuthProvider } from '../features/auth'
 import type { AuthApi } from '../features/auth'
 import { anonymousAuthError, createFakeAuthApi } from '../test/auth'
+import { QueryProvider } from '../test/query'
 import { SAMPLE_ROOMS } from './dev/sampleRooms'
 import { routes } from './router'
+
+const fetchMock = vi.fn()
+
+beforeEach(() => {
+  fetchMock.mockReset()
+  fetchMock.mockResolvedValue(
+    new Response(JSON.stringify([]), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }),
+  )
+  vi.stubGlobal('fetch', fetchMock)
+})
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 function renderRoute(path: string, api: AuthApi = createFakeAuthApi()) {
   const router = createMemoryRouter(routes, { initialEntries: [path] })
   return render(
-    <AuthProvider api={api}>
-      <RouterProvider router={router} />
-    </AuthProvider>,
+    <QueryProvider>
+      <AuthProvider api={api}>
+        <RouterProvider router={router} />
+      </AuthProvider>
+    </QueryProvider>,
   )
 }
 
@@ -48,13 +69,15 @@ describe('router', () => {
     renderRoute('/rooms', anonymousApi())
 
     expect(await screen.findByRole('heading', { name: /entrar/i })).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: /suas salas/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: /minhas salas/i })).not.toBeInTheDocument()
   })
 
   it('renders the room list inside the shell for an authenticated visitor', async () => {
     renderRoute('/rooms')
 
-    expect(await screen.findByRole('heading', { name: /suas salas/i })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', { level: 1, name: /minhas salas/i }),
+    ).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /minhas salas/i })).toHaveAttribute(
       'aria-current',
       'page',
@@ -64,7 +87,9 @@ describe('router', () => {
   it('sends an authenticated visitor from the login page to the room list', async () => {
     renderRoute('/login')
 
-    expect(await screen.findByRole('heading', { name: /suas salas/i })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', { level: 1, name: /minhas salas/i }),
+    ).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: /entrar/i })).not.toBeInTheDocument()
   })
 
@@ -84,7 +109,7 @@ describe('router', () => {
   })
 
   it('shows the not-found state for an unknown room', async () => {
-    renderRoute('/rooms/00000000-0000-0000-0000-000000000000')
+    renderRoute(`/rooms/00000000-0000-0000-0000-000000000000`)
 
     expect(await screen.findByText(/sala não encontrada/i)).toBeInTheDocument()
   })

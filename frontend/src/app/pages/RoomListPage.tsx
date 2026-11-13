@@ -1,26 +1,32 @@
-import { Link, useSearchParams } from 'react-router-dom'
+import { useCallback, useState } from 'react'
 import { Button, EmptyState } from '../../shared/components'
-import { RoomCard } from '../../features/rooms'
-import type { RoomSummary } from '../../features/rooms'
+import {
+  ConfirmDialog,
+  CreateRoomDialog,
+  RoomCard,
+  roomsErrorMessage,
+} from '../../features/rooms'
+import type { RoomLanguage, RoomSummary } from '../../features/rooms'
 
-type RoomListPageProps = {
-  ownedRooms?: RoomSummary[]
-  joinedRooms?: RoomSummary[]
-  isLoading?: boolean
-  onCreateRoom?: () => void
+const LOAD_ERROR_FALLBACK = 'Não foi possível carregar suas salas. Tente novamente.'
+const CREATE_ERROR_FALLBACK = 'Não foi possível criar a sala. Tente novamente.'
+const CLOSE_ERROR_FALLBACK = 'Não foi possível encerrar a sala. Tente novamente.'
+const REGENERATE_ERROR_FALLBACK = 'Não foi possível regenerar o código. Tente novamente.'
+
+type PendingAction = {
+  kind: 'close' | 'regenerate'
+  room: RoomSummary
 }
 
-const TAB_CLASSES = {
-  active: 'border-accent bg-muted text-foreground',
-  inactive: 'border-transparent text-muted-foreground hover:border-border hover:text-foreground',
-} as const
-
-function tabClassName(isActive: boolean) {
-  return [
-    'inline-flex min-h-11 items-center rounded-lg border px-4 text-sm font-medium transition',
-    'focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none',
-    isActive ? TAB_CLASSES.active : TAB_CLASSES.inactive,
-  ].join(' ')
+type RoomListPageProps = {
+  rooms: RoomSummary[]
+  isLoading?: boolean
+  errorMessage?: string | null
+  isSessionExpired?: boolean
+  onRetry?: () => void
+  onCreateRoom: (language: RoomLanguage) => Promise<RoomSummary>
+  onCloseRoom: (room: RoomSummary) => Promise<RoomSummary>
+  onRegenerateCode: (room: RoomSummary) => Promise<RoomSummary>
 }
 
 function countLabel(count: number, singular: string, plural: string) {
@@ -28,16 +34,99 @@ function countLabel(count: number, singular: string, plural: string) {
 }
 
 export default function RoomListPage({
-  ownedRooms = [],
-  joinedRooms = [],
+  rooms,
   isLoading = false,
+  errorMessage = null,
+  isSessionExpired = false,
+  onRetry,
   onCreateRoom,
+  onCloseRoom,
+  onRegenerateCode,
 }: RoomListPageProps) {
-  const [searchParams] = useSearchParams()
-  const isJoinedTab = searchParams.get('tab') === 'joined'
-  const rooms = isJoinedTab ? joinedRooms : ownedRooms
+  const [createOpen, setCreateOpen] = useState(false)
+  const [createPending, setCreatePending] = useState(false)
+  const [createError, setCreateError] = useState<string | null>(null)
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null)
+  const [actionPending, setActionPending] = useState(false)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [announcement, setAnnouncement] = useState('')
+
   const openCount = rooms.filter((room) => room.status === 'active').length
   const closedCount = rooms.length - openCount
+  const hasRooms = rooms.length > 0
+  const showFullError = Boolean(errorMessage) && !hasRooms && !isLoading
+  const showStaleBanner = Boolean(errorMessage) && hasRooms
+
+  const openCreateDialog = useCallback(() => {
+    setCreateError(null)
+    setCreateOpen(true)
+  }, [])
+
+  const closeCreateDialog = useCallback(() => {
+    if (createPending) return
+    setCreateOpen(false)
+    setCreateError(null)
+  }, [createPending])
+
+  async function handleCreate(language: RoomLanguage) {
+    setCreatePending(true)
+    setCreateError(null)
+    try {
+      const room = await onCreateRoom(language)
+      setCreateOpen(false)
+      setAnnouncement(`Sala criada. Código de acesso ${room.accessCode}.`)
+    } catch (error) {
+      setCreateError(roomsErrorMessage(error, CREATE_ERROR_FALLBACK))
+    } finally {
+      setCreatePending(false)
+    }
+  }
+
+  function openConfirmation(kind: PendingAction['kind'], room: RoomSummary) {
+    setActionError(null)
+    setPendingAction({ kind, room })
+  }
+
+  function cancelConfirmation() {
+    if (actionPending) return
+    setPendingAction(null)
+    setActionError(null)
+  }
+
+  async function confirmAction() {
+    if (!pendingAction) return
+    const { kind, room } = pendingAction
+    setActionPending(true)
+    setActionError(null)
+
+    try {
+      if (kind === 'close') {
+        await onCloseRoom(room)
+        setAnnouncement(`Sala ${room.accessCode} encerrada.`)
+      } else {
+        const updated = await onRegenerateCode(room)
+        setAnnouncement(
+          `Novo código de acesso: ${updated.accessCode}. O código anterior não funciona mais.`,
+        )
+      }
+      setPendingAction(null)
+    } catch (error) {
+      setActionError(
+        roomsErrorMessage(error, kind === 'close' ? CLOSE_ERROR_FALLBACK : REGENERATE_ERROR_FALLBACK),
+      )
+    } finally {
+      setActionPending(false)
+    }
+  }
+
+  const confirmTitle =
+    pendingAction?.kind === 'close'
+      ? `Encerrar sala ${pendingAction.room.accessCode}?`
+      : 'Regenerar código de acesso?'
+  const confirmDescription =
+    pendingAction?.kind === 'close'
+      ? 'Espectadores não poderão mais entrar e a sala não poderá ser reaberta. O código atual continua disponível para leitura.'
+      : 'O código atual deixa de funcionar imediatamente. Quem já está na sala continua conectado; novas entradas precisam do novo código.'
 
   return (
     <section aria-labelledby="room-list-heading">
@@ -45,58 +134,69 @@ export default function RoomListPage({
         <div>
           <h1
             id="room-list-heading"
-            className="font-mono text-3xl font-semibold tracking-tight"
+            tabIndex={-1}
+            className="font-mono text-3xl font-semibold tracking-tight focus-visible:outline-none"
           >
-            Suas salas
+            Minhas salas
           </h1>
           <p className="mt-2 text-muted-foreground">
-            Gerencie as salas que você criou e as que acompanhou.
+            Crie salas, compartilhe o código de acesso e gerencie o que já aconteceu.
           </p>
         </div>
-        <Button type="button" onClick={onCreateRoom}>
+        <Button type="button" onClick={openCreateDialog}>
           Nova sala
         </Button>
       </header>
 
-      <nav aria-label="Filtro de salas" className="mt-6 flex gap-2">
-        <Link
-          to="/rooms"
-          aria-current={isJoinedTab ? undefined : 'true'}
-          className={tabClassName(!isJoinedTab)}
-        >
-          Minhas
-        </Link>
-        <Link
-          to="/rooms?tab=joined"
-          aria-current={isJoinedTab ? 'true' : undefined}
-          className={tabClassName(isJoinedTab)}
-        >
-          Participei
-        </Link>
-      </nav>
+      {announcement ? (
+        <p role="status" aria-live="polite" className="sr-only">
+          {announcement}
+        </p>
+      ) : null}
 
-      {isLoading ? (
+      {showStaleBanner ? (
+        <div
+          role="alert"
+          className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/60 bg-muted px-4 py-3"
+        >
+          <p className="text-sm text-foreground">{errorMessage}</p>
+          {onRetry ? (
+            <Button type="button" variant="secondary" className="px-4" onClick={onRetry}>
+              Tentar novamente
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {isLoading && !hasRooms ? (
         <p role="status" className="mt-8 text-muted-foreground">
           Carregando salas…
         </p>
-      ) : rooms.length === 0 ? (
+      ) : showFullError ? (
+        <div
+          role="alert"
+          className="mt-8 flex flex-col items-start gap-3 rounded-xl border border-destructive/60 bg-muted p-6"
+        >
+          <p className="text-sm text-foreground">
+            {errorMessage ?? LOAD_ERROR_FALLBACK}
+          </p>
+          {onRetry ? (
+            <Button type="button" onClick={onRetry}>
+              {isSessionExpired ? 'Entrar novamente' : 'Tentar novamente'}
+            </Button>
+          ) : null}
+        </div>
+      ) : !hasRooms ? (
         <div className="mt-8">
-          {isJoinedTab ? (
-            <EmptyState
-              title="Você ainda não participou de nenhuma sala"
-              description="Quando alguém compartilhar um código de acesso com você, a sala aparece aqui."
-            />
-          ) : (
-            <EmptyState
-              title="Nenhuma sala ainda"
-              description="Crie sua primeira sala, escolha a linguagem e compartilhe o código com a turma."
-              action={
-                <Button type="button" onClick={onCreateRoom}>
-                  Criar sala
-                </Button>
-              }
-            />
-          )}
+          <EmptyState
+            title="Nenhuma sala ainda"
+            description="Crie sua primeira sala, escolha a linguagem e compartilhe o código com a turma."
+            action={
+              <Button type="button" onClick={openCreateDialog}>
+                Criar sala
+              </Button>
+            }
+          />
         </div>
       ) : (
         <>
@@ -107,12 +207,39 @@ export default function RoomListPage({
           <ul className="mt-4 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {rooms.map((room) => (
               <li key={room.id}>
-                <RoomCard room={room} href={`/rooms/${room.id}`} />
+                <RoomCard
+                  room={room}
+                  href={`/rooms/${room.id}`}
+                  onClose={(target) => openConfirmation('close', target)}
+                  onRegenerateCode={(target) => openConfirmation('regenerate', target)}
+                />
               </li>
             ))}
           </ul>
         </>
       )}
+
+      <CreateRoomDialog
+        open={createOpen}
+        isLoading={createPending}
+        error={createError}
+        onSubmit={handleCreate}
+        onCancel={closeCreateDialog}
+      />
+
+      <ConfirmDialog
+        open={pendingAction !== null}
+        title={confirmTitle}
+        description={confirmDescription}
+        confirmLabel={pendingAction?.kind === 'close' ? 'Encerrar sala' : 'Regenerar código'}
+        loadingLabel={pendingAction?.kind === 'close' ? 'Encerrando…' : 'Regenerando…'}
+        variant={pendingAction?.kind === 'close' ? 'danger' : 'primary'}
+        isLoading={actionPending}
+        error={actionError}
+        fallbackFocusId="room-list-heading"
+        onConfirm={confirmAction}
+        onCancel={cancelConfirmation}
+      />
     </section>
   )
 }

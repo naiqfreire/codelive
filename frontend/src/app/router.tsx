@@ -9,12 +9,10 @@ import { RouteFallback } from './RouteFallback'
 
 const LoginRoute = lazy(() => import('./routes/LoginRoute'))
 const RegisterRoute = lazy(() => import('./routes/RegisterRoute'))
+const RoomListRoute = lazy(() => import('./routes/RoomListRoute'))
 
 // The fixture chunk is only reachable in development, so it never enters the
 // production bundle.
-const RoomListPage = lazy(() =>
-  import.meta.env.DEV ? import('./dev/DevRoomListPage') : import('./pages/RoomListPage'),
-)
 const OwnerRoomPage = lazy(() =>
   import.meta.env.DEV ? import('./dev/DevOwnerRoomPage') : import('./pages/OwnerRoomPage'),
 )
@@ -48,7 +46,7 @@ export const routes: RouteObject[] = [
         path: '/rooms',
         element: <AppShell />,
         children: [
-          { index: true, element: withSuspense(<RoomListPage />) },
+          { index: true, element: withSuspense(<RoomListRoute />) },
           { path: ':roomId', element: withSuspense(<OwnerRoomPage />) },
           { path: ':roomId/view', element: withSuspense(<SpectatorRoomPage />) },
         ],
