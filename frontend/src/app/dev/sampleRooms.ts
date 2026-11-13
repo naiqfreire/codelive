@@ -55,25 +55,6 @@ export const SAMPLE_ROOMS: RoomDetail[] = [
   },
 ]
 
-export const SAMPLE_JOINED_ROOMS: RoomDetail[] = [
-  {
-    id: '9a2b3c40-0000-4000-8000-000000000007',
-    accessCode: 'M6X2TP',
-    language: 'python',
-    status: 'active',
-    createdAt: '2026-11-09T09:00:00Z',
-    code: 'print("aula de hoje")\n',
-  },
-  {
-    id: '9a2b3c40-0000-4000-8000-000000000008',
-    accessCode: 'Q1W5ER',
-    language: 'java',
-    status: 'closed',
-    createdAt: '2026-11-02T15:40:00Z',
-    code: 'class Exemplo {}\n',
-  },
-]
-
 export function findSampleRoom(id: string | undefined): RoomDetail | undefined {
   return SAMPLE_ROOMS.find((room) => room.id === id)
 }
