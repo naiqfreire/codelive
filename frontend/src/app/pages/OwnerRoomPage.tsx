@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Button, EmptyState, StatusBadge } from '../../shared/components'
-import { AccessCode, LanguageSelector } from '../../features/rooms'
+import { Button, EmptyState } from '../../shared/components'
+import { LanguageSelector } from '../../features/rooms'
 import type { RoomDetail, RoomLanguage } from '../../features/rooms'
 import { CodeEditor } from '../../features/live_code'
+import { RoomLayout } from '../layouts/RoomLayout'
 
 type OwnerRoomPageProps = {
   room?: RoomDetail
@@ -17,6 +18,9 @@ type RoomActionsProps = {
   onClose?: () => void
   onRegenerateCode?: () => void
 }
+
+const CLOSED_NOTICE =
+  'Esta sala foi encerrada. O código continua disponível para leitura, mas ninguém pode mais entrar nem editar.'
 
 function RoomActions({ isClosed, onClose, onRegenerateCode }: RoomActionsProps) {
   return (
@@ -70,58 +74,29 @@ export default function OwnerRoomPage({
     <section aria-labelledby="owner-room-heading" className="space-y-6">
       <BackLink />
 
-      <header className="space-y-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <h1
-            id="owner-room-heading"
-            className="font-mono text-3xl font-semibold tracking-tight"
-          >
-            Sua sala
-          </h1>
-          <StatusBadge status={room.status} />
-        </div>
-        <p className="text-muted-foreground">
-          {isClosed
-            ? 'Esta sala foi encerrada. O código continua disponível para leitura, mas ninguém pode mais entrar nem editar.'
-            : 'Compartilhe o código abaixo com quem vai assistir à aula.'}
-        </p>
-      </header>
-
-      <div className="flex flex-col gap-5 rounded-xl border border-border bg-surface p-5 lg:flex-row lg:items-start lg:justify-between">
-        <div className="min-w-0 flex-1">
-          <AccessCode mode="display" code={room.accessCode} />
-        </div>
-        <div className="w-full space-y-3 sm:w-44">
+      <RoomLayout
+        title="Sua sala"
+        headingId="owner-room-heading"
+        accessCode={room.accessCode}
+        language={room.language}
+        status={room.status}
+        readOnly={isClosed}
+        readOnlyNotice={CLOSED_NOTICE}
+        actions={
+          <RoomActions
+            isClosed={isClosed}
+            onClose={onClose}
+            onRegenerateCode={onRegenerateCode}
+          />
+        }
+        languageControl={
           <LanguageSelector
             value={room.language}
             onChange={(language) => onLanguageChange?.(language)}
+            disabled={isClosed}
           />
-          <div className="hidden gap-2 md:flex md:flex-col">
-            <RoomActions
-              isClosed={isClosed}
-              onClose={onClose}
-              onRegenerateCode={onRegenerateCode}
-            />
-          </div>
-          <details className="md:hidden">
-            <summary
-              aria-label="Mais ações"
-              className="inline-flex min-h-11 w-full cursor-pointer list-none items-center justify-center rounded-lg border border-border px-4 font-medium transition hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
-            >
-              <span aria-hidden="true">···</span>
-            </summary>
-            <div className="mt-2 flex flex-col gap-2">
-              <RoomActions
-                isClosed={isClosed}
-                onClose={onClose}
-                onRegenerateCode={onRegenerateCode}
-              />
-            </div>
-          </details>
-        </div>
-      </div>
-
-      <div>
+        }
+      >
         <h2 className="mb-2 text-sm font-medium text-foreground">Código da sala</h2>
         <CodeEditor
           value={code}
@@ -129,9 +104,9 @@ export default function OwnerRoomPage({
           readOnly={isClosed}
           onChange={setCode}
           label="Editor de código"
-          className="h-[60vh]"
+          className="h-[60vh] lg:h-[70vh]"
         />
-      </div>
+      </RoomLayout>
     </section>
   )
 }

@@ -36,6 +36,13 @@ describe('OwnerRoomPage', () => {
     expect(screen.getByRole('button', { name: /copiar/i })).toBeInTheDocument()
   })
 
+  it('keeps the title and the access code in the same header', () => {
+    renderRoom()
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Sua sala' })).toBeInTheDocument()
+    expect(screen.getByText('K7M2QX')).toBeInTheDocument()
+  })
+
   it('shows the current language in the selector', () => {
     renderRoom()
 
@@ -46,6 +53,12 @@ describe('OwnerRoomPage', () => {
     renderRoom()
 
     expect(screen.getByText('Aberta')).toBeInTheDocument()
+  })
+
+  it('does not mark the active room as read-only', () => {
+    renderRoom()
+
+    expect(screen.queryByText('Somente leitura')).not.toBeInTheDocument()
   })
 
   it('renders an editable editor for the owner', () => {
@@ -60,7 +73,7 @@ describe('OwnerRoomPage', () => {
     const onClose = vi.fn()
     renderRoom({ onClose })
 
-    fireEvent.click(screen.getAllByRole('button', { name: /encerrar sala/i })[0])
+    fireEvent.click(screen.getByRole('button', { name: /encerrar sala/i }))
 
     expect(onClose).toHaveBeenCalledTimes(1)
   })
@@ -69,7 +82,7 @@ describe('OwnerRoomPage', () => {
     const onRegenerateCode = vi.fn()
     renderRoom({ onRegenerateCode })
 
-    fireEvent.click(screen.getAllByRole('button', { name: /regenerar código/i })[0])
+    fireEvent.click(screen.getByRole('button', { name: /regenerar código/i }))
 
     expect(onRegenerateCode).toHaveBeenCalledTimes(1)
   })
@@ -111,6 +124,12 @@ describe('OwnerRoomPage (closed room)', () => {
     expect(screen.getByText('Encerrada')).toBeInTheDocument()
   })
 
+  it('marks the closed room as read-only', () => {
+    renderRoom({ room: closedRoom })
+
+    expect(screen.getByText('Somente leitura')).toBeInTheDocument()
+  })
+
   it('explains the closed state in text', () => {
     renderRoom({ room: closedRoom })
 
@@ -120,13 +139,13 @@ describe('OwnerRoomPage (closed room)', () => {
   it('disables the close action', () => {
     renderRoom({ room: closedRoom })
 
-    expect(screen.getAllByRole('button', { name: /encerrar sala/i })[0]).toBeDisabled()
+    expect(screen.getByRole('button', { name: /encerrar sala/i })).toBeDisabled()
   })
 
   it('disables the regenerate action', () => {
     renderRoom({ room: closedRoom })
 
-    expect(screen.getAllByRole('button', { name: /regenerar código/i })[0]).toBeDisabled()
+    expect(screen.getByRole('button', { name: /regenerar código/i })).toBeDisabled()
   })
 
   it('renders the editor as read-only', () => {
