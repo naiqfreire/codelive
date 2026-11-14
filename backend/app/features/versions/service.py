@@ -12,15 +12,18 @@ so callers stage nothing else on it (Phase 7's job constructs a fresh session
 per run). A session with pending inserts/updates/deletes is rejected with
 ``ValueError`` before any SQL executes.
 """
+import hashlib
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
 
 import structlog
-from sqlalchemy import Delete, delete, select
+from sqlalchemy import Delete, delete, insert, select
 from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.features.live_code import public as live_code_public
+from app.features.rooms import public as rooms_public
 from app.features.versions.models import CodeVersion
 
 RETENTION_DAYS = 30  # D-08: strictly older than 30 days
@@ -101,3 +104,93 @@ async def purge_expired_versions(
             duration_ms=duration_ms,
         )
     return deleted_count
+
+
+def _content_hash(content: str) -> str:
+    """SHA-256 hex of the UTF-8 bytes of ``content`` (D-05).
+
+    Re-derived here on purpose: importing ``live_code.service`` internals
+    would violate the vertical-slice rule; CONTEXT.md D-05 allows either.
+    """
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
+async def latest_version_hashes(session: AsyncSession) -> dict[uuid.UUID, str]:
+    """Return ``{room_id: content_hash}`` of the latest version per room.
+
+    One set-based SELECT over ``code_versions`` using the same
+    ``(created_at, id)`` DESC tiebreak as ``retention_statement`` so the diff
+    and retention agree on which version is latest.
+    """
+    stmt = (
+        select(CodeVersion.room_id, CodeVersion.content)
+        .ext(distinct_on(CodeVersion.room_id))
+        .order_by(
+            CodeVersion.room_id,
+            CodeVersion.created_at.desc(),
+            CodeVersion.id.desc(),
+        )
+    )
+    rows = (await session.execute(stmt)).all()
+    return {row.room_id: _content_hash(row.content) for row in rows}
+
+
+async def collect_changed_rooms(
+    session: AsyncSession,
+) -> list[tuple[uuid.UUID, str, str, str]]:
+    """Return ``(room_id, content, language, content_hash)`` for changed rooms.
+
+    D-19: three bulk reads — ``live_code.public.list_current_states``,
+    ``rooms.public.list_room_languages`` and ``latest_version_hashes`` — with
+    the hash compare, the empty-content filter (D-06) and the no-version
+    first-snapshot rule (D-05) all in Python. No joined SQL spans slices.
+    A state row whose room_id has no rooms row is skipped.
+    """
+    states = await live_code_public.list_current_states(session)
+    languages = await rooms_public.list_room_languages(session)
+    latest = await latest_version_hashes(session)
+    changed: list[tuple[uuid.UUID, str, str, str]] = []
+    for room_id, content in states.items():
+        if content == "":
+            continue  # D-06: empty content is skipped before hashing
+        language = languages.get(room_id)
+        if language is None:
+            continue
+        content_hash = _content_hash(content)
+        if latest.get(room_id) == content_hash:
+            continue  # D-05: identical content is never re-snapshotted
+        changed.append((room_id, content, language, content_hash))
+    return changed
+
+
+async def create_version(
+    session: AsyncSession,
+    room_id: uuid.UUID,
+    content: str,
+    language: str,
+) -> CodeVersion:
+    """Insert one immutable version for a changed room and commit.
+
+    Dumb by design (Open Question 4): the diff owns the hash decision; this
+    function inserts what the caller says changed. ``author_id`` stays NULL —
+    the job is the author-free writer (Phase 6 D-10). Commits before return
+    so the job logs only after the write is durable.
+
+    Core ``insert`` (the ``live_code.service.persist_code_update`` idiom)
+    rather than ORM object construction: it does not force the ``users``
+    table into ``Base.metadata`` just to resolve ``author_id``'s FK target.
+    """
+    stmt = (
+        insert(CodeVersion)
+        .values(
+            room_id=room_id,
+            content=content,
+            language=language,
+            author_id=None,
+        )
+        .returning(CodeVersion)
+    )
+    result = await session.execute(stmt)
+    version = result.scalar_one()
+    await session.commit()
+    return version

@@ -13,7 +13,7 @@ from app.shared.errors import ErrorCode
 if TYPE_CHECKING:
     from app.features.auth.models import User
 
-__all__ = ["authorize_room_identity", "get_room_status"]
+__all__ = ["authorize_room_identity", "get_room_status", "list_room_languages"]
 
 
 async def authorize_room_identity(
@@ -56,3 +56,14 @@ async def get_room_status(session: AsyncSession, room_id: uuid.UUID) -> str | No
     """
     result = await session.execute(select(Room.status).where(Room.id == room_id))
     return result.scalar_one_or_none()
+
+
+async def list_room_languages(session: AsyncSession) -> dict[uuid.UUID, str]:
+    """Return ``{room_id: language}`` for every rooms row.
+
+    Read-only and commit-free; the caller injects the session. Used by the
+    versions slice to source ``code_versions.language`` per changed room
+    (D-19: bulk read through the owner's public surface, no joined SQL).
+    """
+    result = await session.execute(select(Room.id, Room.language))
+    return {row.id: row.language for row in result.all()}
