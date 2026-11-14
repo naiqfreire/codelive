@@ -190,7 +190,7 @@ sem a aba "Participei" nesta entrega.
   2. "Copiar" (secundário) — sempre disponível;
   3. "Regenerar" (secundário) — apenas sala aberta;
   4. "Encerrar" (destrutivo) — apenas sala aberta.
-     Alvos ≥ 44 px, `gap-2` e quebra de linha no mobile.
+  Alvos ≥ 44 px, `gap-2` e quebra de linha no mobile.
 - **Copiar código:** `navigator.clipboard.writeText`; sucesso anuncia "Copiado!" em
   `role="status" aria-live="polite"`. Sem Clipboard API ou com permissão negada, mostra
   "Não foi possível copiar. Selecione o código e copie manualmente." e o código continua
