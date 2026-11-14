@@ -7,17 +7,23 @@ import { ApiError } from '../../shared/http'
 import { createFakeAuthApi } from '../../test/auth'
 import { AppShell } from './AppShell'
 
-function renderShell(api: AuthApi = createFakeAuthApi()) {
+function renderShell(
+  api: AuthApi = createFakeAuthApi(),
+  initialEntries: string[] = ['/rooms'],
+) {
   const router = createMemoryRouter(
     [
       {
         path: '/rooms',
         element: <AppShell />,
-        children: [{ index: true, element: <p>Conteúdo roteado</p> }],
+        children: [
+          { index: true, element: <p>Conteúdo roteado</p> },
+          { path: 'join', element: <p>tela do código</p> },
+        ],
       },
       { path: '/login', element: <p>tela de login</p> },
     ],
-    { initialEntries: ['/rooms'] },
+    { initialEntries },
   )
 
   return render(
@@ -44,13 +50,25 @@ describe('AppShell', () => {
     )
   })
 
-  it('keeps the enter-with-code navigation item disabled', async () => {
+  it('links to the access-code step', async () => {
     renderShell()
 
-    const enterWithCode = await screen.findByText(/entrar com código/i)
+    const enterWithCode = await screen.findByRole('link', { name: /entrar com código/i })
 
-    expect(enterWithCode).toHaveAttribute('aria-disabled', 'true')
-    expect(screen.queryByRole('link', { name: /entrar com código/i })).not.toBeInTheDocument()
+    expect(enterWithCode).toHaveAttribute('href', '/rooms/join')
+  })
+
+  it('marks the access-code section with aria-current page', async () => {
+    renderShell(undefined, ['/rooms/join'])
+
+    expect(await screen.findByText('tela do código')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /entrar com código/i })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+    expect(screen.getByRole('link', { name: /minhas salas/i })).not.toHaveAttribute(
+      'aria-current',
+    )
   })
 
   it('shows the authenticated user name', async () => {

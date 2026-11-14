@@ -44,6 +44,11 @@ function createFakeRoomsApi(overrides: Partial<RoomsApi> = {}): RoomsApi {
       rooms = rooms.map((item) => (item.id === roomId ? updated : item))
       return updated
     }),
+    getByCode: vi.fn(async () => ({
+      ...room,
+      ownerId: TEST_USER.id,
+      updatedAt: room.createdAt,
+    })),
     ...overrides,
   }
 }

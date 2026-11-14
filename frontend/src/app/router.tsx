@@ -10,6 +10,8 @@ import { RouteFallback } from './RouteFallback'
 const LoginRoute = lazy(() => import('./routes/LoginRoute'))
 const RegisterRoute = lazy(() => import('./routes/RegisterRoute'))
 const RoomListRoute = lazy(() => import('./routes/RoomListRoute'))
+const CodeEntryRoute = lazy(() => import('./routes/CodeEntryRoute'))
+const JoinRoomRoute = lazy(() => import('./routes/JoinRoomRoute'))
 
 // The fixture chunk is only reachable in development, so it never enters the
 // production bundle.
@@ -47,6 +49,8 @@ export const routes: RouteObject[] = [
         element: <AppShell />,
         children: [
           { index: true, element: withSuspense(<RoomListRoute />) },
+          { path: 'join', element: withSuspense(<CodeEntryRoute />) },
+          { path: ':roomId/join', element: withSuspense(<JoinRoomRoute />) },
           { path: ':roomId', element: withSuspense(<OwnerRoomPage />) },
           { path: ':roomId/view', element: withSuspense(<SpectatorRoomPage />) },
         ],

@@ -102,6 +102,37 @@ describe('apiRequest', () => {
     })
   })
 
+  it('logs the redacted path when the caller provides one', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    fetchMock.mockResolvedValue(
+      jsonResponse(
+        {
+          error: {
+            code: 'room_not_found',
+            message: 'Sala não encontrada.',
+            request_id: 'req-4',
+          },
+        },
+        404,
+      ),
+    )
+
+    await apiRequest('/api/rooms/by-code/K7M2QX', {
+      logPath: '/api/rooms/by-code/{codigo}',
+    }).catch(() => undefined)
+
+    expect(consoleError).toHaveBeenCalledTimes(1)
+    const [scope, entry] = consoleError.mock.calls[0] as [string, Record<string, unknown>]
+    expect(scope).toBe('[http]')
+    expect(entry).toMatchObject({
+      event: 'request_failed',
+      path: '/api/rooms/by-code/{codigo}',
+      status: 404,
+      code: 'room_not_found',
+    })
+    expect(JSON.stringify(entry)).not.toContain('K7M2QX')
+  })
+
   it('logs the failure without leaking the request body', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     fetchMock.mockResolvedValue(

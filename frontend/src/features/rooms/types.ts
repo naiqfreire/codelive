@@ -12,3 +12,12 @@ export type RoomSummary = {
 }
 
 export type RoomDetail = RoomSummary & { code: string }
+
+/**
+ * Room resolved from an access code (`GET /api/rooms/by-code/{codigo}`).
+ * It carries metadata for the identification step, not the live code content.
+ */
+export type RoomLookup = RoomSummary & {
+  ownerId: string
+  updatedAt: string
+}

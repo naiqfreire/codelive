@@ -31,6 +31,11 @@ export class ApiError extends Error {
 export type ApiRequestOptions = {
   method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE'
   body?: unknown
+  /**
+   * Path used in failure logs when the real URL contains a secret (for
+   * example, an access code). Request bodies are never logged.
+   */
+  logPath?: string
 }
 
 type ErrorDetails = {
@@ -84,7 +89,8 @@ function logFailure(path: string, method: string, error: ApiError): void {
 }
 
 export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
-  const { method = 'GET', body } = options
+  const { method = 'GET', body, logPath } = options
+  const failurePath = logPath ?? path
   const headers: Record<string, string> = { Accept: 'application/json' }
   const init: RequestInit = { method, credentials: 'include', headers }
 
@@ -98,7 +104,7 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
     response = await fetch(path, init)
   } catch {
     const networkError = new ApiError(0, NETWORK_ERROR_CODE, NETWORK_ERROR_MESSAGE, null)
-    logFailure(path, method, networkError)
+    logFailure(failurePath, method, networkError)
     throw networkError
   }
 
@@ -116,7 +122,7 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
       details?.message ?? FALLBACK_ERROR_MESSAGE,
       details?.requestId ?? response.headers.get('x-request-id'),
     )
-    logFailure(path, method, error)
+    logFailure(failurePath, method, error)
     throw error
   }
 

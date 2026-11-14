@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { ACCESS_CODE_LENGTH, isValidAccessCode, normalizeAccessCode } from './accessCode'
+import {
+  ACCESS_CODE_LENGTH,
+  isValidAccessCode,
+  normalizeAccessCode,
+  validateAccessCode,
+} from './accessCode'
 
 describe('normalizeAccessCode', () => {
   it('uppercases the input', () => {
@@ -33,5 +38,32 @@ describe('isValidAccessCode', () => {
     expect(isValidAccessCode('K7M2QI')).toBe(false)
     expect(isValidAccessCode('K7M2Q1')).toBe(false)
     expect(isValidAccessCode('K7M2Q0')).toBe(false)
+  })
+})
+
+describe('validateAccessCode', () => {
+  it('normalizes and accepts a complete code', () => {
+    expect(validateAccessCode('k7-m2 qx')).toEqual({ ok: true, value: 'K7M2QX' })
+  })
+
+  it('reports an empty code', () => {
+    expect(validateAccessCode('   ')).toEqual({
+      ok: false,
+      error: 'Informe o código de acesso.',
+    })
+  })
+
+  it('reports an incomplete code', () => {
+    expect(validateAccessCode('K7M2Q')).toEqual({
+      ok: false,
+      error: 'O código de acesso tem 6 caracteres.',
+    })
+  })
+
+  it('removes ambiguous characters before checking the length', () => {
+    expect(validateAccessCode('K7M2QO')).toEqual({
+      ok: false,
+      error: 'O código de acesso tem 6 caracteres.',
+    })
   })
 })

@@ -37,6 +37,11 @@ function createFakeRoomsApi(overrides: Partial<RoomsApi> = {}): RoomsApi {
     create: vi.fn(async (language) => ({ ...createdRoom, language })),
     close: vi.fn(async () => ({ ...roomA, status: 'closed' as const })),
     regenerateCode: vi.fn(async () => ({ ...roomA, accessCode: 'H5P1VC' })),
+    getByCode: vi.fn(async () => ({
+      ...roomA,
+      ownerId: 'owner-1',
+      updatedAt: roomA.createdAt,
+    })),
     ...overrides,
   }
 }
