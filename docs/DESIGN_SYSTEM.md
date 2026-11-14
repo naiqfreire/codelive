@@ -311,6 +311,47 @@ compostas por `CodeEntryRoute` e `JoinRoomRoute` em `app/routes/`.
 - **Foco visível:** anéis `focus-visible:ring-2` em links e ações, alvos `min-h-11` (44 px), textos
   sempre acompanhados de mensagem (nunca só cor).
 
+### 6.11 Layout da sala de edição/visualização (#35)
+
+Shell compartilhado pelas duas páginas da sala: `RoomLayout` em `app/layouts/RoomLayout.tsx`,
+composto por `OwnerRoomPage` e `SpectatorRoomPage`. A composição mora em `app/` porque cruza as
+fatias `rooms`, `live_code` e `membership` (regra de composição do `AGENTS.md`).
+
+- **Estrutura em três blocos.** `header` (identidade e ações), `corpo` (área de código, conteúdo
+  principal e com toda a largura livre) e `aside` (participantes). O corpo recebe `children`; o
+  `aside` é sempre renderizado pelo layout. Motivo: sem um contrato escrito, as duas páginas voltam
+  a divergir — foi o que aconteceu entre a #20 e a #34.
+- **Título com o código ao lado.** O `h1` continua "Sua sala" (dono) e "Sala ao vivo" (espectador),
+  em `font-mono text-2xl sm:text-3xl`; o código de acesso fica imediatamente ao lado, em chip
+  `font-mono text-sm tracking-[0.2em] select-all` com botão "Copiar código K7M2QX" (`min-h-11
+  min-w-11`, ícone SVG `aria-hidden`). Motivo: `rooms` não tem coluna de nome — o código é a única
+  identidade da sala, e prometer um "nome da sala" seria inventar campo que não existe no banco.
+- **Somente leitura em dois níveis.** Badge textual "Somente leitura" no header, ao lado do status,
+  e o aviso fixo já documentado em §6.6 quando a página o fornece. No dono, a sala encerrada usa
+  `readOnly` + "Encerrada" + badge + aviso "Esta sala foi encerrada…"; no espectador, badge + aviso
+  da §6.6. Motivo: a indicação precisa sobreviver a daltonismo e a zoom — cor sozinha não informa
+  (RF06/RNF01). O `readOnly` continua sendo interface; o servidor é a autoridade.
+- **Participantes com fallback explícito.** `ParticipantList`
+  (`features/membership/components/ParticipantList.tsx`) recebe `participants: Participant[]`; sem
+  nomes, mostra a contagem real do WebSocket ("Nenhum participante conectado ainda", "1 participante
+  conectado", "N participantes conectados") em `aria-live="polite"`. Quando há nomes, a lista vence e
+  a contagem desaparece. Motivo: o frame `presence` só carrega `count` e `role`, e não existe
+  endpoint que exponha os nicknames; exibir as duas informações deixaria "3 participantes" ao lado de
+  uma lista com dois nomes. O dono marca-se com "(dono)".
+- **Breakpoints 768 e 1024.** Abaixo de 768 px, uma coluna: header, aviso, editor, participantes
+  abaixo. Entre 768 e 1023 px, uma coluna com os participantes em grade de duas colunas. A partir de
+  1024 px (`lg`), duas colunas: editor em `flex-1` e participantes em `lg:w-72` (`18rem`), com o
+  header ocupando a largura toda. Motivo: fixa por escrito a responsividade que a #20 e a #34
+  entregaram sem documentar.
+- **Altura do editor por faixa.** `h-[60vh] lg:h-[70vh]` — altura generosa, não viewport exata. Motivo:
+  o `CodeEditor` traz `min-h-64` embutido (§6.5); tentar `min-h-0`/`flex` para "caber sem scroll"
+  depende da ordem do CSS gerado pelo Tailwind e esmaga o editor em telas baixas. A área de código
+  domina a tela sem apostar nessa briga.
+- **Feedback de cópia em região viva persistente.** O parágrafo de feedback usa `aria-live="polite"`
+  com altura reservada (`min-h-5`), **sem** `role="status"` — o `role="status"` do espectador pertence
+  ao `ConnectionStatus` (§6.6), e dois elementos com o mesmo papel tornam a região ambígua para
+  leitores de tela.
+
 ## 7. Checklist de entrega
 
 - [ ] Nenhum emoji como ícone; SVG com `aria-hidden` quando decorativo.
