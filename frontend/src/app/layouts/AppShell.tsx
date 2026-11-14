@@ -6,9 +6,6 @@ import { Button } from '../../shared/components'
 const NAV_LINK_CLASSES =
   'inline-flex min-h-11 items-center rounded-lg px-3 text-sm font-medium transition focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none'
 
-const FUTURE_ITEM_CLASSES =
-  'inline-flex min-h-11 items-center rounded-lg px-3 text-sm font-medium text-muted-foreground/60'
-
 const LOGOUT_ERROR = 'Não foi possível sair. Tente novamente.'
 
 export function AppShell() {
@@ -17,7 +14,8 @@ export function AppShell() {
   const { user, logout } = useAuth()
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   const [logoutError, setLogoutError] = useState<string | null>(null)
-  const isRoomsSection = pathname.startsWith('/rooms')
+  const isJoinSection = pathname === '/rooms/join' || pathname.endsWith('/join')
+  const isRoomsSection = pathname.startsWith('/rooms') && !isJoinSection
 
   async function handleLogout() {
     setLogoutError(null)
@@ -55,13 +53,18 @@ export function AppShell() {
             >
               Minhas salas
             </Link>
-            <span
-              aria-disabled="true"
-              title="Disponível depois da integração com a API"
-              className={FUTURE_ITEM_CLASSES}
+            <Link
+              to="/rooms/join"
+              aria-current={isJoinSection ? 'page' : undefined}
+              className={[
+                NAV_LINK_CLASSES,
+                isJoinSection
+                  ? 'bg-muted text-foreground'
+                  : 'text-muted-foreground hover:text-foreground',
+              ].join(' ')}
             >
               Entrar com código
-            </span>
+            </Link>
             {user ? (
               <span className="max-w-xs truncate px-3 text-sm text-muted-foreground">
                 Olá, {user.name}
