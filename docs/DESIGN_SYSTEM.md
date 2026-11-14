@@ -2,7 +2,7 @@
 
 Referência de identidade visual do CodeLive. Combina a atmosfera escura e imersiva de
 colaboração do **kosmi.io** com a clareza e o foco em código do **onlinegdb.com**, usando os
-tokens verificados do skill `ui-ux-pro-max` (estilo *Dark Mode / OLED*, "code dark + run green").
+tokens verificados do skill `ui-ux-pro-max` (estilo _Dark Mode / OLED_, "code dark + run green").
 
 > Fonte da verdade dos tokens: `frontend/tailwind.config.js`. Componentes usam apenas classes
 > semânticas do Tailwind; nunca hexadecimais espalhados pelo código.
@@ -18,20 +18,20 @@ tokens verificados do skill `ui-ux-pro-max` (estilo *Dark Mode / OLED*, "code da
 
 ## 2. Cores
 
-| Papel                  | Token Tailwind        | Hex       | Uso                                      |
-| ---------------------- | --------------------- | --------- | ---------------------------------------- |
-| Fundo                  | `bg-background`       | `#0F172A` | Fundo da aplicação                       |
-| Texto                  | `text-foreground`     | `#F8FAFC` | Texto principal                          |
-| Superfície / card      | `bg-surface`          | `#1B2336` | Cards, toolbars, modais                  |
-| Borda                  | `border-border`       | `#475569` | Divisórias e contornos                   |
-| Primária (estrutural)  | `bg-primary`          | `#1E293B` | Botões neutros e cabeçalhos              |
-| Secundária             | `bg-secondary`        | `#334155` | Estados intermediários                   |
-| Acento / CTA           | `bg-accent`           | `#22C55E` | Ação principal, foco, status "ao vivo"   |
-| Texto sobre acento     | `text-accent-foreground` | `#0F172A` | Texto em botões verdes                |
-| Muted                  | `bg-muted`            | `#272F42` | Fundos discretos                         |
-| Texto muted            | `text-muted-foreground` | `#94A3B8` | Apoio, placeholders, legendas          |
-| Destrutivo             | `bg-destructive`      | `#EF4444` | Erros e ações destrutivas                |
-| Anel de foco           | `ring-ring`           | `#FFFFFF` | `focus-visible`                          |
+| Papel                 | Token Tailwind           | Hex       | Uso                                    |
+| --------------------- | ------------------------ | --------- | -------------------------------------- |
+| Fundo                 | `bg-background`          | `#0F172A` | Fundo da aplicação                     |
+| Texto                 | `text-foreground`        | `#F8FAFC` | Texto principal                        |
+| Superfície / card     | `bg-surface`             | `#1B2336` | Cards, toolbars, modais                |
+| Borda                 | `border-border`          | `#475569` | Divisórias e contornos                 |
+| Primária (estrutural) | `bg-primary`             | `#1E293B` | Botões neutros e cabeçalhos            |
+| Secundária            | `bg-secondary`           | `#334155` | Estados intermediários                 |
+| Acento / CTA          | `bg-accent`              | `#22C55E` | Ação principal, foco, status "ao vivo" |
+| Texto sobre acento    | `text-accent-foreground` | `#0F172A` | Texto em botões verdes                 |
+| Muted                 | `bg-muted`               | `#272F42` | Fundos discretos                       |
+| Texto muted           | `text-muted-foreground`  | `#94A3B8` | Apoio, placeholders, legendas          |
+| Destrutivo            | `bg-destructive`         | `#EF4444` | Erros e ações destrutivas              |
+| Anel de foco          | `ring-ring`              | `#FFFFFF` | `focus-visible`                        |
 
 Regras:
 
@@ -41,10 +41,10 @@ Regras:
 
 ## 3. Tipografia
 
-| Uso                          | Fonte            | Classes                          |
-| ---------------------------- | ---------------- | -------------------------------- |
-| Corpo, labels, navegação     | **IBM Plex Sans** | `font-sans`                     |
-| Títulos, código, códigos     | **JetBrains Mono** | `font-mono`                    |
+| Uso                      | Fonte              | Classes     |
+| ------------------------ | ------------------ | ----------- |
+| Corpo, labels, navegação | **IBM Plex Sans**  | `font-sans` |
+| Títulos, código, códigos | **JetBrains Mono** | `font-mono` |
 
 - Corpo base: 16 px, `line-height: 1.5`.
 - Títulos: `font-mono`, `font-semibold`, `tracking-tight`.
@@ -221,6 +221,56 @@ sem a aba "Participei" nesta entrega.
   (memória + armazenado) é limpo ao sair ou trocar de usuário. O token de sessão continua em
   cookie `httpOnly` e nunca entra no cache.
 - **Responsivo** em 375, 768, 1024 e 1440 px.
+
+### 6.8 Modal
+
+Componente `Modal` em `features/membership/components/Modal.tsx`. Enquanto um segundo slice não
+precisar dele, ele fica na fatia de membership (regra de `shared/` do `AGENTS.md`).
+
+- **Estrutura:** overlay `fixed inset-0 z-50` com fundo `bg-background/80`; painel central
+  `max-w-md`, `bg-surface`, `border border-border`, `rounded-xl`, `p-6`, `max-h-[90vh]` com rolagem
+  interna (o `body` não rola).
+- **Semântica:** `role="dialog"` + `aria-modal="true"` + `aria-labelledby` apontando para o título.
+  A descrição, quando existe, entra em `aria-describedby`.
+- **Overlay próprio, não `<dialog>` nativo:** o jsdom usado nos testes não implementa
+  `showModal()`. Com o overlay o foco é verificável por teste, e é justamente o comportamento que
+  quebra sem ninguém notar.
+- **Foco:** ao abrir, o primeiro elemento focável recebe o foco; `Tab` no último volta ao primeiro e
+  `Shift+Tab` no primeiro vai ao último, sempre dentro do painel. Ao fechar, o foco volta ao
+  elemento que abriu o modal.
+- **Fechamento:** `Escape`, clique no backdrop e botão "Fechar". Clique no painel não fecha. O botão
+  "Fechar" tem nome acessível (`aria-label`), alvo `size-11` (44 px) e fica por último no DOM para
+  não roubar o foco inicial do primeiro campo.
+- **Scroll:** `document.body.style.overflow = 'hidden'` enquanto aberto, restaurado ao desmontar.
+- **Sem animação de entrada**, portanto nada a desligar em `prefers-reduced-motion`.
+
+### 6.9 Modal de entrada na sala (#26)
+
+`JoinRoomModal` em `features/membership/components/JoinRoomModal.tsx`, passo 3 do fluxo do
+espectador (RNF03). Compõe o `Modal` da §6.8 e o `TextField` de `shared/`.
+
+- **Nickname é obrigatório, inclusive na entrada anônima.** "Anônimo" significa _sem conta_ (sem
+  e-mail, sem senha), não _sem nome_: a presença precisa de um nome para identificar quem está na
+  sala, e o backend responde 422 quando o anônimo chega sem nickname
+  (`backend/app/features/rooms/service.py`). Não torne o campo opcional "para simplificar" — isso
+  quebra a integração e viola a constraint `nickname_required` de `room_members`.
+- **Limite de 60 caracteres**, espelhando `JoinRequest.nickname` (`max_length=60`) e
+  `room_members.nickname` (`String(60)`). O valor é aparado (`trim`) antes de validar e de enviar.
+- **Contagem por code point** (`Array.from(...).length`), porque o backend conta caracteres em
+  Python: um emoji conta 1 lá e 2 em unidades UTF-16 no JavaScript.
+- **Sem `maxLength` no input.** Com ele o navegador truncaria o texto e o erro de tamanho nunca
+  apareceria; a validação é do formulário, não do campo.
+- **Quando valida:** no envio; depois do primeiro erro, a cada tecla, e o erro some assim que o
+  valor fica válido. Não existe mínimo inventado — o backend aceita 1 caractere.
+- **Erro:** junto ao campo, via `TextField` (`role="alert"`, `aria-invalid`, `aria-describedby`).
+  Texto sempre presente, nunca só cor.
+- **Duas ações:** "Entrar na sala" (primário, `type="submit"`) e "Entrar sem conta" (secundário).
+  As duas validam o nickname; a diferença é apenas a flag `anonymous` enviada.
+- **Envio em andamento:** `isSubmitting` desabilita o campo e as duas ações.
+- **Contrato:** o modal chama `onJoin({ nickname, anonymous })` e não navega nem chama a API — a
+  página decide o destino. Quando `accessCode` é informado, o código aparece na descrição.
+- **Revisão visual:** a página `/rooms/join` existe apenas em `import.meta.env.DEV`; a rota real do
+  espectador pertence ao fluxo de entrada.
 
 ## 7. Checklist de entrega
 
