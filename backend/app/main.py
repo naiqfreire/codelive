@@ -1,6 +1,8 @@
 """Composition root: FastAPI instance, /api prefix, middleware wiring."""
 
 import os
+from contextlib import asynccontextmanager, suppress
+import asyncio
 
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.features.auth import router as auth
 from app.features.live_code import router as live_code
 from app.features.rooms import router as rooms
+from app.features.versions import job
 from app.shared import health
 from app.shared.asyncio_policy import ensure_selector_event_loop
 from app.shared.config import get_settings
@@ -21,7 +24,17 @@ ensure_selector_event_loop()
 
 configure_logging(os.getenv("LOG_LEVEL", "INFO"))
 
-app = FastAPI(title="CodeLive API", version="0.1.0", docs_url="/docs", openapi_url="/openapi.json")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    task = asyncio.create_task(job.run_forever())
+    yield
+    task.cancel()
+    with suppress(asyncio.CancelledError):
+        await task
+
+
+app = FastAPI(title="CodeLive API", version="0.1.0", lifespan=lifespan, docs_url="/docs", openapi_url="/openapi.json")
 app.add_middleware(OriginCheckMiddleware, allowed_origins=get_settings().ALLOWED_ORIGINS)
 app.add_middleware(RequestContextMiddleware)
 app.add_middleware(
