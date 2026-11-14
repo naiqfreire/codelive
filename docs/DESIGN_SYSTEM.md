@@ -269,8 +269,47 @@ espectador (RNF03). Compõe o `Modal` da §6.8 e o `TextField` de `shared/`.
 - **Envio em andamento:** `isSubmitting` desabilita o campo e as duas ações.
 - **Contrato:** o modal chama `onJoin({ nickname, anonymous })` e não navega nem chama a API — a
   página decide o destino. Quando `accessCode` é informado, o código aparece na descrição.
-- **Revisão visual:** a página `/rooms/join` existe apenas em `import.meta.env.DEV`; a rota real do
-  espectador pertence ao fluxo de entrada.
+- **Revisão visual:** a página `/rooms/join` existe apenas em `import.meta.env.DEV`; a rota real
+  de entrada por código é descrita na §6.10.
+
+### 6.10 Entrada por código e identificação (#25)
+
+Fluxo do espectador (RNF03), passos 2 e 3, para visitantes autenticados: `CodeEntryPage` em
+`app/pages/CodeEntryPage.tsx` e `IdentificationPage` em `app/pages/IdentificationPage.tsx`,
+compostas por `CodeEntryRoute` e `JoinRoomRoute` em `app/routes/`.
+
+- **Rotas:** `/rooms/join` para o código e `/rooms/:roomId/join` para a identificação, ambas dentro
+  de `ProtectedRoute`/`AppShell`. A navegação principal marca "Entrar com código" com
+  `aria-current="page"` em qualquer rota terminada em `/join`; "Minhas salas" deixa de ser a seção
+  atual nesse caso.
+- **Passo visível:** "Passo 2 de 4" no código e "Passo 3 de 4" na identificação, em
+  `text-xs font-medium tracking-[0.2em] text-accent uppercase`, seguidos de `h1` em `font-mono
+  text-3xl font-semibold tracking-tight` com `tabIndex={-1}` para receber foco programático.
+- **Campo do código:** `TextField` com `hint` ("6 caracteres, como K7M2QX."), `font-mono`,
+  `tracking-[0.25em] uppercase`, `autoComplete="off"`, `autoCapitalize="characters"`,
+  `autoCorrect="off"` e `spellCheck={false}`. A normalização (`normalizeAccessCode`) roda a cada
+  tecla, então colar com espaços, hífen ou minúsculas funciona.
+- **Validação local antes da API:** vazio → "Informe o código de acesso."; incompleto → "O código de
+  acesso tem 6 caracteres.". O erro fica no campo (`aria-invalid`, `aria-describedby`) e o foco
+  volta para ele — depois que o campo deixa de estar `disabled`, não durante o envio.
+- **Validação remota:** `GET /api/rooms/by-code/{codigo}` via `roomsApi.getByCode`, sem cache. Código
+  inexistente (`room_not_found`) vira erro de campo e preserva o valor digitado. Falha de rede,
+  sessão expirada e erro desconhecido usam `role="alert"` acima do botão; a sessão expirada
+  oferece "Entrar novamente", que encerra a sessão e leva ao login.
+- **Estado de envio:** o botão alterna para "Verificando…", recebe `aria-busy="true"` e desabilita
+  campo e ação; o foco é aplicado quando o envio termina.
+- **Sala encerrada:** resposta `status: "closed"` bloqueia o avanço com
+  "Esta sala já foi encerrada. Peça um novo código ao dono." e não navega.
+- **Privacidade:** o código nunca aparece em log de falha. `apiRequest` recebe
+  `logPath: '/api/rooms/by-code/{codigo}'`, então o path registrado é o modelo, não o valor.
+- **Identificação é um shell nesta entrega:** reusa `JoinRoomModal` (§6.9) e apenas registra a
+  escolha em um `role="status"`; o `POST /join` pertence à tarefa de entrada. Fechar o modal volta
+  para `/rooms/join` com o código preservado em `location.state`.
+- **Guarda de URL direta:** sem `location.state.room`, com `id` diferente de `:roomId` ou com sala
+  encerrada, a página mostra "Código necessário" (ou "Sala encerrada") e um link para informar outro
+  código — nunca renderiza o modal sem a validação do passo anterior.
+- **Foco visível:** anéis `focus-visible:ring-2` em links e ações, alvos `min-h-11` (44 px), textos
+  sempre acompanhados de mensagem (nunca só cor).
 
 ## 7. Checklist de entrega
 
