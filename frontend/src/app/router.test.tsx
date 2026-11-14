@@ -93,6 +93,34 @@ describe('router', () => {
     expect(screen.queryByRole('heading', { name: /entrar/i })).not.toBeInTheDocument()
   })
 
+  it('renders the access-code step inside the shell for an authenticated visitor', async () => {
+    renderRoute('/rooms/join')
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: /entrar com código/i }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /entrar com código/i })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+  })
+
+  it('sends an anonymous visitor away from the access-code step', async () => {
+    renderRoute('/rooms/join', anonymousApi())
+
+    expect(await screen.findByRole('heading', { name: /entrar/i })).toBeInTheDocument()
+    expect(
+      screen.queryByRole('heading', { name: /entrar com código/i }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('guards the identification step when it is opened directly', async () => {
+    renderRoute(`/rooms/${SAMPLE_ROOMS[0].id}/join`)
+
+    expect(await screen.findByRole('heading', { name: /código necessário/i })).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
   it('renders an owner room from the fixture', async () => {
     renderRoute(`/rooms/${SAMPLE_ROOMS[0].id}`)
 
