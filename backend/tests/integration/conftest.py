@@ -204,3 +204,23 @@ async def _clean_tables(test_engine):
     async with test_engine.begin() as conn:
         await conn.execute(_t("TRUNCATE users RESTART IDENTITY CASCADE"))
     yield
+
+
+@pytest.fixture(autouse=True)
+def _job_session_factory(test_engine, monkeypatch):
+    """Route versions job sessions to the TEST database.
+
+    D-01's loop is tick-first, so entering the lifespan in any fixture fires
+    one tick; bare ``get_sessionmaker()`` calls bypass dependency overrides,
+    so the symbol imported into the job module is patched instead (same seam
+    as ``ws_client``). No snapshot row can reach the dev DB (port 5432).
+    """
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    import app.features.versions.job as job_module
+
+    factory = async_sessionmaker(test_engine, expire_on_commit=False)
+    monkeypatch.setattr(job_module, "get_sessionmaker", lambda: factory)
+    job_module.last_purge = None  # IN-01: isolate the D-16 cadence state per test
+    yield
+    job_module.last_purge = None
