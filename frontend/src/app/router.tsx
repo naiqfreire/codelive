@@ -9,33 +9,20 @@ import { RouteFallback } from './RouteFallback'
 
 const LoginRoute = lazy(() => import('./routes/LoginRoute'))
 const RegisterRoute = lazy(() => import('./routes/RegisterRoute'))
+const RoomListRoute = lazy(() => import('./routes/RoomListRoute'))
 
 // The fixture chunk is only reachable in development, so it never enters the
 // production bundle.
-const RoomListPage = lazy(() =>
-  import.meta.env.DEV ? import('./dev/DevRoomListPage') : import('./pages/RoomListPage'),
-)
 const OwnerRoomPage = lazy(() =>
   import.meta.env.DEV ? import('./dev/DevOwnerRoomPage') : import('./pages/OwnerRoomPage'),
 )
 const SpectatorRoomPage = lazy(() =>
   import.meta.env.DEV ? import('./dev/DevSpectatorRoomPage') : import('./pages/SpectatorRoomPage'),
 )
-// In production this route is not registered, so the fallback below is never
-// rendered; it exists only to keep the dev chunk out of the production bundle.
-const JoinEntryPage = lazy(() =>
-  import.meta.env.DEV ? import('./dev/DevJoinPage') : import('./pages/RoomListPage'),
-)
 
 function withSuspense(element: ReactNode) {
   return <Suspense fallback={<RouteFallback />}>{element}</Suspense>
 }
-
-// `/rooms/join` only exists while reviewing the modal; the real spectator route
-// belongs to the join flow task.
-const devRoutes: RouteObject[] = import.meta.env.DEV
-  ? [{ path: 'join', element: withSuspense(<JoinEntryPage />) }]
-  : []
 
 export const routes: RouteObject[] = [
   {
@@ -59,8 +46,7 @@ export const routes: RouteObject[] = [
         path: '/rooms',
         element: <AppShell />,
         children: [
-          { index: true, element: withSuspense(<RoomListPage />) },
-          ...devRoutes,
+          { index: true, element: withSuspense(<RoomListRoute />) },
           { path: ':roomId', element: withSuspense(<OwnerRoomPage />) },
           { path: ':roomId/view', element: withSuspense(<SpectatorRoomPage />) },
         ],

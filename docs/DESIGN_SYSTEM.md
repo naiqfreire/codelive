@@ -2,7 +2,7 @@
 
 Referência de identidade visual do CodeLive. Combina a atmosfera escura e imersiva de
 colaboração do **kosmi.io** com a clareza e o foco em código do **onlinegdb.com**, usando os
-tokens verificados do skill `ui-ux-pro-max` (estilo *Dark Mode / OLED*, "code dark + run green").
+tokens verificados do skill `ui-ux-pro-max` (estilo _Dark Mode / OLED_, "code dark + run green").
 
 > Fonte da verdade dos tokens: `frontend/tailwind.config.js`. Componentes usam apenas classes
 > semânticas do Tailwind; nunca hexadecimais espalhados pelo código.
@@ -18,20 +18,20 @@ tokens verificados do skill `ui-ux-pro-max` (estilo *Dark Mode / OLED*, "code da
 
 ## 2. Cores
 
-| Papel                  | Token Tailwind        | Hex       | Uso                                      |
-| ---------------------- | --------------------- | --------- | ---------------------------------------- |
-| Fundo                  | `bg-background`       | `#0F172A` | Fundo da aplicação                       |
-| Texto                  | `text-foreground`     | `#F8FAFC` | Texto principal                          |
-| Superfície / card      | `bg-surface`          | `#1B2336` | Cards, toolbars, modais                  |
-| Borda                  | `border-border`       | `#475569` | Divisórias e contornos                   |
-| Primária (estrutural)  | `bg-primary`          | `#1E293B` | Botões neutros e cabeçalhos              |
-| Secundária             | `bg-secondary`        | `#334155` | Estados intermediários                   |
-| Acento / CTA           | `bg-accent`           | `#22C55E` | Ação principal, foco, status "ao vivo"   |
-| Texto sobre acento     | `text-accent-foreground` | `#0F172A` | Texto em botões verdes                |
-| Muted                  | `bg-muted`            | `#272F42` | Fundos discretos                         |
-| Texto muted            | `text-muted-foreground` | `#94A3B8` | Apoio, placeholders, legendas          |
-| Destrutivo             | `bg-destructive`      | `#EF4444` | Erros e ações destrutivas                |
-| Anel de foco           | `ring-ring`           | `#FFFFFF` | `focus-visible`                          |
+| Papel                 | Token Tailwind           | Hex       | Uso                                    |
+| --------------------- | ------------------------ | --------- | -------------------------------------- |
+| Fundo                 | `bg-background`          | `#0F172A` | Fundo da aplicação                     |
+| Texto                 | `text-foreground`        | `#F8FAFC` | Texto principal                        |
+| Superfície / card     | `bg-surface`             | `#1B2336` | Cards, toolbars, modais                |
+| Borda                 | `border-border`          | `#475569` | Divisórias e contornos                 |
+| Primária (estrutural) | `bg-primary`             | `#1E293B` | Botões neutros e cabeçalhos            |
+| Secundária            | `bg-secondary`           | `#334155` | Estados intermediários                 |
+| Acento / CTA          | `bg-accent`              | `#22C55E` | Ação principal, foco, status "ao vivo" |
+| Texto sobre acento    | `text-accent-foreground` | `#0F172A` | Texto em botões verdes                 |
+| Muted                 | `bg-muted`               | `#272F42` | Fundos discretos                       |
+| Texto muted           | `text-muted-foreground`  | `#94A3B8` | Apoio, placeholders, legendas          |
+| Destrutivo            | `bg-destructive`         | `#EF4444` | Erros e ações destrutivas              |
+| Anel de foco          | `ring-ring`              | `#FFFFFF` | `focus-visible`                        |
 
 Regras:
 
@@ -41,10 +41,10 @@ Regras:
 
 ## 3. Tipografia
 
-| Uso                          | Fonte            | Classes                          |
-| ---------------------------- | ---------------- | -------------------------------- |
-| Corpo, labels, navegação     | **IBM Plex Sans** | `font-sans`                     |
-| Títulos, código, códigos     | **JetBrains Mono** | `font-mono`                    |
+| Uso                      | Fonte              | Classes     |
+| ------------------------ | ------------------ | ----------- |
+| Corpo, labels, navegação | **IBM Plex Sans**  | `font-sans` |
+| Títulos, código, códigos | **JetBrains Mono** | `font-mono` |
 
 - Corpo base: 16 px, `line-height: 1.5`.
 - Títulos: `font-mono`, `font-semibold`, `tracking-tight`.
@@ -83,12 +83,11 @@ Código de acesso de **6 caracteres**, maiúsculos, sem ambíguos
 `backend/app/features/rooms/service.py`), por exemplo `K7M2QX`.
 Implementação em `features/rooms/components/AccessCode.tsx` + `features/rooms/accessCode.ts`.
 
-- **Modo display (dono):** código em `font-mono`, `tracking-[0.3em]`, botão "Copiar" com feedback
+- **Modo display (dono):** código em `font-mono`, `tracking-[0.2em]`, botão "Copiar" com feedback
   visual e `aria-live="polite"` ("Copiado!"). Fallback sem Clipboard API: selecionar o texto e
   orientar a cópia manual.
 - **Modo input (espectador):** campo único, `inputMode="text"`, `autoComplete="one-time-code"`,
-  `font-mono tracking-[0.2em]`, normalização para maiúsculas e limite de 6 caracteres; mensagem de
-  erro junto ao campo.
+  normalização para maiúsculas e limite de 6 caracteres; mensagem de erro junto ao campo.
 - Rótulo visível, texto de apoio e foco visível.
 - Nunca usar apenas placeholder como rótulo.
 
@@ -177,7 +176,53 @@ são apresentacionais e recebem `onSubmit`; a composição com a API vive em
 - Contagem de participantes com `aria-live="polite"` e plural/singular corretos.
 - Animação apenas com `motion-safe:`; `prefers-reduced-motion` desliga o pulso.
 
-### 6.7 Modal
+### 6.7 Tela "Minhas salas" (#17)
+
+Rota `/rooms`, composta por `app/routes/RoomListRoute.tsx` (auth + API + cache) e
+`app/pages/RoomListPage.tsx` (apresentação). Lista apenas as salas do dono, mais recente primeiro,
+sem a aba "Participei" nesta entrega.
+
+- **Card de sala** (`features/rooms/components/RoomCard.tsx`): código como título
+  (`font-mono`, `tracking`, `select-all`), `StatusBadge` com texto ("Aberta"/"Encerrada"),
+  linguagem e data de criação. Ações em ordem visual e com nomes acessíveis que incluem o código
+  (`sr-only`):
+  1. "Abrir sala" (link, `bg-surface`);
+  2. "Copiar" (secundário) — sempre disponível;
+  3. "Regenerar" (secundário) — apenas sala aberta;
+  4. "Encerrar" (destrutivo) — apenas sala aberta.
+     Alvos ≥ 44 px, `gap-2` e quebra de linha no mobile.
+- **Copiar código:** `navigator.clipboard.writeText`; sucesso anuncia "Copiado!" em
+  `role="status" aria-live="polite"`. Sem Clipboard API ou com permissão negada, mostra
+  "Não foi possível copiar. Selecione o código e copie manualmente." e o código continua
+  selecionável.
+- **Criar sala:** o botão "Nova sala" (header) e o "Criar sala" (estado vazio) abrem o mesmo
+  diálogo, com `LanguageSelector` (Python padrão), descrição do código automático, "Criar sala" e
+  "Cancelar". Durante o envio o botão fica `aria-busy`/"Criando…", tudo é desabilitado e ESC/
+  backdrop não fecham. Falha mantém o diálogo aberto com `role="alert"`; sucesso fecha e anuncia
+  "Sala criada. Código de acesso X.".
+- **Encerrar (confirmação):** título "Encerrar sala K7M2QX?", aviso de que a sala não reabre,
+  confirmação na variante destrutiva "Encerrar sala". Sucesso troca o badge para "Encerrada",
+  remove "Regenerar"/"Encerrar" e anuncia "Sala K7M2QX encerrada.".
+- **Regenerar (confirmação):** título "Regenerar código de acesso?", aviso de que o código
+  anterior deixa de funcionar, confirmação primária "Regenerar código". Sucesso exibe o novo
+  código e anuncia "Novo código de acesso: X. O código anterior não funciona mais.".
+- **Botão destrutivo:** `bg-destructive` com texto escuro (`text-accent-foreground`, ≈ 4.5:1).
+  A ação nunca é indicada só pela cor; o rótulo diz o que acontece.
+- **Diálogos** (`Dialog`/`ConfirmDialog`/`CreateRoomDialog`): `role="dialog"`,
+  `aria-modal="true"`, `aria-labelledby`/`aria-describedby`, foco inicial em "Cancelar", `Tab`
+  preso ao diálogo, ESC/backdrop fecham quando não há envio em andamento e o foco volta ao
+  gatilho (ou ao título da página quando a ação some, como em "Encerrar").
+- **Estados:** carregando (`role="status"` "Carregando salas…" mantendo o header), vazio
+  (`EmptyState` + "Criar sala"), erro sem dados (`role="alert"` + "Tentar novamente" ou
+  "Entrar novamente" em 401) e erro com cache (lista permanece + banner `role="alert"` com
+  retry).
+- **Cache (SPEC §10):** TanStack Query com `staleTime` 30 s, `gcTime` 24 h e persistência em
+  `localStorage` apenas de consultas `rooms` bem-sucedidas. A chave inclui o `userId`, e o cache
+  (memória + armazenado) é limpo ao sair ou trocar de usuário. O token de sessão continua em
+  cookie `httpOnly` e nunca entra no cache.
+- **Responsivo** em 375, 768, 1024 e 1440 px.
+
+### 6.8 Modal
 
 Componente `Modal` em `features/membership/components/Modal.tsx`. Enquanto um segundo slice não
 precisar dele, ele fica na fatia de membership (regra de `shared/` do `AGENTS.md`).
@@ -199,13 +244,13 @@ precisar dele, ele fica na fatia de membership (regra de `shared/` do `AGENTS.md
 - **Scroll:** `document.body.style.overflow = 'hidden'` enquanto aberto, restaurado ao desmontar.
 - **Sem animação de entrada**, portanto nada a desligar em `prefers-reduced-motion`.
 
-### 6.8 Modal de entrada na sala (#26)
+### 6.9 Modal de entrada na sala (#26)
 
 `JoinRoomModal` em `features/membership/components/JoinRoomModal.tsx`, passo 3 do fluxo do
-espectador (RNF03). Compõe o `Modal` da §6.7 e o `TextField` de `shared/`.
+espectador (RNF03). Compõe o `Modal` da §6.8 e o `TextField` de `shared/`.
 
-- **Nickname é obrigatório, inclusive na entrada anônima.** "Anônimo" significa *sem conta* (sem
-  e-mail, sem senha), não *sem nome*: a presença precisa de um nome para identificar quem está na
+- **Nickname é obrigatório, inclusive na entrada anônima.** "Anônimo" significa _sem conta_ (sem
+  e-mail, sem senha), não _sem nome_: a presença precisa de um nome para identificar quem está na
   sala, e o backend responde 422 quando o anônimo chega sem nickname
   (`backend/app/features/rooms/service.py`). Não torne o campo opcional "para simplificar" — isso
   quebra a integração e viola a constraint `nickname_required` de `room_members`.
