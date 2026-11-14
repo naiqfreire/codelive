@@ -1,25 +1,28 @@
-import { EmptyState, StatusBadge } from '../../shared/components'
+import { EmptyState } from '../../shared/components'
 import { CodeEditor, ConnectionStatus, useRoomConnection } from '../../features/live_code'
 import type { RoomConnectionState } from '../../features/live_code'
+import type { Participant } from '../../features/membership'
 import type { RoomDetail } from '../../features/rooms'
+import { RoomLayout } from '../layouts/RoomLayout'
 
 type SpectatorRoomPageProps = {
   room?: RoomDetail
   /** Overrides the live hook (tests and future join flow). */
   connection?: RoomConnectionState
+  /**
+   * Names of the people in the room. The presence frame only carries a count
+   * today, so the layout falls back to it while the list is empty.
+   */
+  participants?: Participant[]
 }
 
 const READ_ONLY_NOTICE = 'Você está assistindo. Somente o dono da sala pode editar o código.'
 
-function participantLabel(count: number) {
-  if (count === 0) {
-    return 'Nenhum participante conectado ainda'
-  }
-
-  return count === 1 ? '1 participante conectado' : `${count} participantes conectados`
-}
-
-export default function SpectatorRoomPage({ room, connection }: SpectatorRoomPageProps) {
+export default function SpectatorRoomPage({
+  room,
+  connection,
+  participants,
+}: SpectatorRoomPageProps) {
   // The hook is always called (rules of hooks); it stays idle when the caller
   // already provides a connection state.
   const liveState = useRoomConnection(connection ? null : (room?.id ?? null), {
@@ -43,41 +46,33 @@ export default function SpectatorRoomPage({ room, connection }: SpectatorRoomPag
 
   return (
     <section aria-labelledby="spectator-room-heading" className="space-y-6">
-      <header className="space-y-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <h1
-            id="spectator-room-heading"
-            className="font-mono text-3xl font-semibold tracking-tight"
-          >
-            Sala ao vivo
-          </h1>
-          <StatusBadge status={room.status} />
-          {live.status === 'idle' ? null : <ConnectionStatus status={live.status} />}
-        </div>
+      <RoomLayout
+        title="Sala ao vivo"
+        headingId="spectator-room-heading"
+        accessCode={room.accessCode}
+        language={live.language ?? room.language}
+        status={room.status}
+        readOnly
+        readOnlyNotice={READ_ONLY_NOTICE}
+        connection={live.status === 'idle' ? null : <ConnectionStatus status={live.status} />}
+        participants={participants}
+        participantCount={live.participantCount}
+      >
+        {live.lastError ? (
+          <p role="alert" className="mb-2 text-sm text-destructive">
+            {live.lastError.message}
+          </p>
+        ) : null}
 
-        <p className="text-muted-foreground">{READ_ONLY_NOTICE}</p>
-
-        <p aria-live="polite" className="text-sm text-muted-foreground">
-          {participantLabel(live.participantCount)}
-        </p>
-      </header>
-
-      {live.lastError ? (
-        <p role="alert" className="text-sm text-destructive">
-          {live.lastError.message}
-        </p>
-      ) : null}
-
-      <div>
         <h2 className="mb-2 text-sm font-medium text-foreground">Código da sala</h2>
         <CodeEditor
           value={live.code}
           language={live.language ?? room.language}
           readOnly
           label="Código da sala"
-          className="h-[60vh]"
+          className="h-[60vh] lg:h-[70vh]"
         />
-      </div>
+      </RoomLayout>
     </section>
   )
 }

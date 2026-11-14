@@ -1,3 +1,4 @@
+import type { Participant } from '../../features/membership'
 import type { RoomDetail } from '../../features/rooms'
 
 /**
@@ -58,3 +59,13 @@ export const SAMPLE_ROOMS: RoomDetail[] = [
 export function findSampleRoom(id: string | undefined): RoomDetail | undefined {
   return SAMPLE_ROOMS.find((room) => room.id === id)
 }
+
+/**
+ * Presence names for the DEV pages. The presence frame only carries a count
+ * today, so this fixture is the only way to review the participants panel.
+ */
+export const SAMPLE_PARTICIPANTS: Participant[] = [
+  { nickname: 'Ana', role: 'owner' },
+  { nickname: 'Bruno', role: 'viewer' },
+  { nickname: 'Carla', role: 'viewer' },
+]

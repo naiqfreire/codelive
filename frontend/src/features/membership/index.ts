@@ -1,5 +1,6 @@
 export { JoinRoomModal } from './components/JoinRoomModal'
 export { Modal } from './components/Modal'
+export { ParticipantList } from './components/ParticipantList'
 export { NICKNAME_MAX_LENGTH, validateNickname } from './nickname'
 export type { NicknameValidation } from './nickname'
-export type { JoinChoice } from './types'
+export type { JoinChoice, Participant, ParticipantRole } from './types'

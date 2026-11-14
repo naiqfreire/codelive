@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
 import type { RoomConnectionState } from '../../features/live_code'
+import type { Participant } from '../../features/membership'
 import type { RoomDetail } from '../../features/rooms'
 import SpectatorRoomPage from './SpectatorRoomPage'
 
@@ -23,9 +24,15 @@ const connected: RoomConnectionState = {
   lastError: null,
 }
 
+const PARTICIPANTS: Participant[] = [
+  { nickname: 'Ana', role: 'owner' },
+  { nickname: 'Bruno', role: 'viewer' },
+]
+
 type PageOverrides = {
   room?: RoomDetail
   connection?: RoomConnectionState
+  participants?: Participant[]
 }
 
 function renderPage(overrides: PageOverrides = {}) {
@@ -52,6 +59,25 @@ describe('SpectatorRoomPage', () => {
     expect(screen.getByText(/somente o dono da sala pode editar/i)).toBeInTheDocument()
   })
 
+  it('marks the room as read-only', () => {
+    renderPage()
+
+    expect(screen.getByText('Somente leitura')).toBeInTheDocument()
+  })
+
+  it('shows the access code in the header', () => {
+    renderPage()
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Sala ao vivo' })).toBeInTheDocument()
+    expect(screen.getByText('K7M2QX')).toBeInTheDocument()
+  })
+
+  it('shows the language of the room', () => {
+    renderPage()
+
+    expect(screen.getByText('Python')).toBeInTheDocument()
+  })
+
   it('shows the live connection status', () => {
     renderPage()
 
@@ -62,6 +88,14 @@ describe('SpectatorRoomPage', () => {
     renderPage()
 
     expect(screen.getByText('2 participantes conectados')).toBeInTheDocument()
+  })
+
+  it('lists the participants it receives', () => {
+    renderPage({ participants: PARTICIPANTS })
+
+    expect(screen.getByText('Ana')).toBeInTheDocument()
+    expect(screen.getByText('Bruno')).toBeInTheDocument()
+    expect(screen.queryByText(/participantes conectados/i)).not.toBeInTheDocument()
   })
 
   it('uses the singular for one participant', () => {

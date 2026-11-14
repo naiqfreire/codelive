@@ -20,3 +20,4 @@ export {
 export type { AccessCodeValidation } from './accessCode'
 export { LANGUAGE_OPTIONS, LANGUAGES } from './languages'
 export type { LanguageOption, RoomLanguage } from './languages'
+export { COPIED_MESSAGE, COPY_FAILURE_MESSAGE, copyText } from './clipboard'
