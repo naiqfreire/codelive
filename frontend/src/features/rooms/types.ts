@@ -12,3 +12,9 @@ export type RoomSummary = {
 }
 
 export type RoomDetail = RoomSummary & { code: string }
+
+/** Mirrors the backend `JoinedRoomOut` payload: a room the user joined as a spectator. */
+export type JoinedRoom = RoomSummary & { joinedAt: string }
+
+/** A room rendered in either list tab; `joinedAt` is only present on the joined tab. */
+export type RoomListItem = RoomSummary & { joinedAt?: string }

@@ -14,6 +14,7 @@ import type { RoomSummary } from './types'
 export const roomKeys = {
   all: ['rooms'] as const,
   mine: (userId: string) => ['rooms', 'mine', userId] as const,
+  joined: (userId: string) => ['rooms', 'joined', userId] as const,
 }
 
 function replaceRoom(rooms: RoomSummary[] | undefined, updated: RoomSummary) {
@@ -26,6 +27,22 @@ export function useMyRooms(userId: string | null | undefined, api: RoomsApi = ro
     queryKey: roomKeys.mine(userId ?? 'anonymous'),
     queryFn: () => api.listMine(),
     enabled: Boolean(userId),
+  })
+}
+
+/**
+ * Rooms the user joined as a spectator. `enabled` keeps the query idle until
+ * the joined tab is actually open, so the default tab never pays for it.
+ */
+export function useJoinedRooms(
+  userId: string | null | undefined,
+  api: RoomsApi = roomsApi,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: roomKeys.joined(userId ?? 'anonymous'),
+    queryFn: () => api.listJoined(),
+    enabled: Boolean(userId) && enabled,
   })
 }
 

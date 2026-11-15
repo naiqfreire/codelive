@@ -5,8 +5,15 @@ import { describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../../shared/http'
 import { QueryProvider } from '../../test/query'
 import type { RoomsApi } from './api'
-import { roomKeys, useCloseRoom, useCreateRoom, useMyRooms, useRegenerateRoomCode } from './queries'
-import type { RoomSummary } from './types'
+import {
+  roomKeys,
+  useCloseRoom,
+  useCreateRoom,
+  useJoinedRooms,
+  useMyRooms,
+  useRegenerateRoomCode,
+} from './queries'
+import type { JoinedRoom, RoomSummary } from './types'
 
 const roomA: RoomSummary = {
   id: '11111111-1111-1111-1111-111111111111',
@@ -31,9 +38,15 @@ const createdRoom: RoomSummary = {
   language: 'java',
 }
 
+const joinedRoom: JoinedRoom = {
+  ...roomA,
+  joinedAt: '2026-11-10T09:00:00Z',
+}
+
 function createFakeRoomsApi(overrides: Partial<RoomsApi> = {}): RoomsApi {
   return {
     listMine: vi.fn(async () => [roomA, roomB]),
+    listJoined: vi.fn(async () => [joinedRoom]),
     create: vi.fn(async (language) => ({ ...createdRoom, language })),
     close: vi.fn(async () => ({ ...roomA, status: 'closed' as const })),
     regenerateCode: vi.fn(async () => ({ ...roomA, accessCode: 'H5P1VC' })),
@@ -51,6 +64,38 @@ function setup(queryClient = new QueryClient()) {
 describe('room queries', () => {
   it('builds a per-user query key', () => {
     expect(roomKeys.mine('user-1')).toEqual(['rooms', 'mine', 'user-1'])
+    expect(roomKeys.joined('user-1')).toEqual(['rooms', 'joined', 'user-1'])
+  })
+
+  it('loads the rooms the user joined', async () => {
+    const api = createFakeRoomsApi()
+    const { wrapper } = setup()
+
+    const { result } = renderHook(() => useJoinedRooms('user-1', api), { wrapper })
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(result.current.data).toEqual([joinedRoom])
+    expect(api.listJoined).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not fetch joined rooms without an authenticated user', async () => {
+    const api = createFakeRoomsApi()
+    const { wrapper } = setup()
+
+    const { result } = renderHook(() => useJoinedRooms(null, api), { wrapper })
+
+    await waitFor(() => expect(result.current.fetchStatus).toBe('idle'))
+    expect(api.listJoined).not.toHaveBeenCalled()
+  })
+
+  it('keeps the joined query idle while its tab is inactive', async () => {
+    const api = createFakeRoomsApi()
+    const { wrapper } = setup()
+
+    const { result } = renderHook(() => useJoinedRooms('user-1', api, false), { wrapper })
+
+    await waitFor(() => expect(result.current.fetchStatus).toBe('idle'))
+    expect(api.listJoined).not.toHaveBeenCalled()
   })
 
   it('loads the owner rooms', async () => {

@@ -7,7 +7,7 @@ import { ApiError } from '../../shared/http'
 import { TEST_USER, createFakeAuthApi } from '../../test/auth'
 import { QueryProvider } from '../../test/query'
 import RoomListRoute from './RoomListRoute'
-import type { RoomSummary } from '../../features/rooms'
+import type { JoinedRoom, RoomSummary } from '../../features/rooms'
 
 const room: RoomSummary = {
   id: '11111111-1111-1111-1111-111111111111',
@@ -17,11 +17,30 @@ const room: RoomSummary = {
   createdAt: '2026-11-09T17:30:00Z',
 }
 
+const joinedRoom: JoinedRoom = {
+  id: '55555555-5555-5555-5555-555555555555',
+  accessCode: 'B4T9RS',
+  language: 'java',
+  status: 'active',
+  createdAt: '2026-11-08T17:30:00Z',
+  joinedAt: '2026-11-10T09:00:00Z',
+}
+
+const closedJoinedRoom: JoinedRoom = {
+  id: '66666666-6666-6666-6666-666666666666',
+  accessCode: 'Z2Y8NM',
+  language: 'c',
+  status: 'closed',
+  createdAt: '2026-11-07T17:30:00Z',
+  joinedAt: '2026-11-11T10:00:00Z',
+}
+
 function createFakeRoomsApi(overrides: Partial<RoomsApi> = {}): RoomsApi {
   let rooms: RoomSummary[] = [room]
 
   return {
     listMine: vi.fn(async () => rooms),
+    listJoined: vi.fn(async () => [joinedRoom, closedJoinedRoom]),
     create: vi.fn(async (language) => {
       const created: RoomSummary = {
         ...room,

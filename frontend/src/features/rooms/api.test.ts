@@ -12,6 +12,11 @@ const wireRoom = {
   created_at: '2026-11-09T17:30:00Z',
 }
 
+const wireJoinedRoom = {
+  ...wireRoom,
+  joined_at: '2026-11-10T09:00:00Z',
+}
+
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -53,6 +58,28 @@ describe('roomsApi', () => {
     ])
     expect(rooms[0]).not.toHaveProperty('access_code')
     expect(rooms[0]).not.toHaveProperty('created_at')
+  })
+
+  it('lists the joined rooms with the joined date', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ items: [wireJoinedRoom] }))
+
+    const rooms = await roomsApi.listJoined()
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/rooms/joined',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    )
+    expect(rooms).toEqual([
+      {
+        id: wireJoinedRoom.id,
+        accessCode: 'K7M2QX',
+        language: 'python',
+        status: 'active',
+        createdAt: '2026-11-09T17:30:00Z',
+        joinedAt: '2026-11-10T09:00:00Z',
+      },
+    ])
+    expect(rooms[0]).not.toHaveProperty('joined_at')
   })
 
   it('creates a room with the chosen language', async () => {
