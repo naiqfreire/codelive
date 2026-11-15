@@ -48,14 +48,11 @@ class JoinRequest(BaseModel):
     nickname: str | None = Field(default=None, max_length=60)
 
 
-class JoinInfo(BaseModel):
-    room_id: uuid.UUID
-    user_id: str
-    role: Literal["owner", "viewer"]
-    is_anonymous: bool
-    nickname: str | None
+class JoinedRoomOut(RoomOut):
+    """A room the authenticated user joined as a viewer, plus when they joined."""
+
     joined_at: datetime
 
 
 class ListJoinedResponse(BaseModel):
-    items: list[JoinInfo]
+    items: list[JoinedRoomOut]

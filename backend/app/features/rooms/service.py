@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.features.membership import public as membership
 from app.features.rooms import cache
 from app.features.rooms.models import Room
-from app.features.rooms.schemas import JoinInfo, ListJoinedResponse, RoomOut
+from app.features.rooms.schemas import JoinedRoomOut, ListJoinedResponse, RoomOut
 from app.shared.errors import ErrorCode
 
 log = structlog.get_logger()
@@ -84,6 +84,17 @@ async def list_rooms_for_owner(session: AsyncSession, owner):
     return payload
 
 
+async def _invalidate_participants(session: AsyncSession, room_id) -> None:
+    """Drop the cached joined list of every authenticated member of the room.
+
+    Closing a room or regenerating its access code changes data that appears in
+    ``rooms:joined:{user_id}`` for its spectators (SPEC §10), so their entries
+    must not survive the mutation.
+    """
+    for member_id in await membership.list_member_user_ids(session, room_id):
+        cache.invalidate_rooms_joined(str(member_id))
+
+
 async def _get_owned_room(session: AsyncSession, room_id, user) -> Room:
     room = await session.get(Room, room_id)
     if room is None:
@@ -98,6 +109,7 @@ async def close_room(session: AsyncSession, room_id, user) -> Room:
     if room.status != "closed":
         room.status = "closed"
         await session.commit()
+        await _invalidate_participants(session, room.id)
     cache.invalidate_rooms_mine(str(user.id))
     return room
 
@@ -122,6 +134,7 @@ async def regenerate_room_code(session: AsyncSession, room_id, user) -> Room:
             raise
         await session.commit()
         cache.invalidate_rooms_mine(str(user.id))
+        await _invalidate_participants(session, room.id)
         return room
     log.error("access_code_exhausted", attempts=MAX_CODE_ATTEMPTS)
     raise HTTPException(status_code=500, detail=ErrorCode.INTERNAL_ERROR)
@@ -223,28 +236,46 @@ async def join_room(
     return room
 
 
+async def _rooms_by_id(session: AsyncSession, room_ids: list[uuid.UUID]) -> dict[uuid.UUID, Room]:
+    """Load the rooms of ``room_ids`` in a single query, keyed by id."""
+    if not room_ids:
+        return {}
+    rows = (
+        (await session.execute(select(Room).where(Room.id.in_(room_ids))))
+        .scalars()
+        .all()
+    )
+    return {room.id: room for room in rows}
+
+
 async def list_rooms_joined(session: AsyncSession, user) -> ListJoinedResponse:
-    """List every viewer membership the user holds, newest first.
+    """List the rooms the user joined as a viewer, newest membership first.
+
+    Only memberships of the authenticated user with role ``viewer`` are
+    considered, so owned rooms and rooms the user never joined never appear.
+    Room metadata comes from the rooms slice (one query, no cross-slice join).
 
     Cached under ``rooms:joined:{user_id}`` (SPEC §10, TTL 30s); invalidated
-    on room creation and on join. The live code path never goes through it.
+    on join and on close/regenerate of any room the user participates in. The
+    live code path never goes through it.
     """
     user_key = str(user.id)
     cached = cache.get_cached_rooms_joined(user_key)
     if cached is not None:
-        return ListJoinedResponse(items=[JoinInfo(**item) for item in cached])
-    memberships = await membership.list_memberships_for_user(session, user.id)
-    memberships = [m for m in memberships if m.role == "viewer"]
+        return ListJoinedResponse(items=[JoinedRoomOut(**item) for item in cached])
+    memberships = await membership.list_memberships_for_user(session, user.id, role="viewer")
+    rooms = await _rooms_by_id(session, [m.room_id for m in memberships])
     payload = [
-        JoinInfo(
-            room_id=m.room_id,
-            user_id=str(m.user_id),
-            role=m.role,
-            is_anonymous=bool(m.is_anonymous),
-            nickname=m.nickname,
+        JoinedRoomOut(
+            id=room.id,
+            access_code=room.access_code,
+            language=room.language,
+            status=room.status,
+            created_at=room.created_at,
             joined_at=m.joined_at,
         )
         for m in memberships
+        if (room := rooms.get(m.room_id)) is not None
     ]
     cache.set_cached_rooms_joined(user_key, [item.model_dump(mode="json") for item in payload])
     return ListJoinedResponse(items=payload)
