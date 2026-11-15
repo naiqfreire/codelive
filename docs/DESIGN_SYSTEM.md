@@ -176,16 +176,24 @@ são apresentacionais e recebem `onSubmit`; a composição com a API vive em
 - Contagem de participantes com `aria-live="polite"` e plural/singular corretos.
 - Animação apenas com `motion-safe:`; `prefers-reduced-motion` desliga o pulso.
 
-### 6.7 Tela "Minhas salas" (#17)
+### 6.7 Tela "Minhas salas" (#17, #27)
 
 Rota `/rooms`, composta por `app/routes/RoomListRoute.tsx` (auth + API + cache) e
-`app/pages/RoomListPage.tsx` (apresentação). Lista apenas as salas do dono, mais recente primeiro,
-sem a aba "Participei" nesta entrega.
+`app/pages/RoomListPage.tsx` (apresentação). Duas abas em links com `aria-current="page"`:
+
+- **Criadas por mim** (`/rooms`) — lista apenas as salas do dono, mais recente primeiro.
+- **Participei** (`/rooms?tab=joined`) — lista apenas as salas em que o usuário entrou como
+  espectador, mais recente participação primeiro. O `h1` passa a ser "Salas que participei".
+
+A aba inativa não dispara consulta: a lista de participações só é carregada quando a aba é
+aberta. O botão "Nova sala" e as ações de gestão aparecem apenas em "Criadas por mim".
 
 - **Card de sala** (`features/rooms/components/RoomCard.tsx`): código como título
   (`font-mono`, `tracking`, `select-all`), `StatusBadge` com texto ("Aberta"/"Encerrada"),
-  linguagem e data de criação. Ações em ordem visual e com nomes acessíveis que incluem o código
-  (`sr-only`):
+  linguagem e data de criação. Na aba "Participei" o card mostra também "entrou em dd/mm/aaaa"
+  e o link vira "Assistir" para `/rooms/:id/view`; sala encerrada mantém o badge "Encerrada"
+  mas não oferece link (sem "Assistir"). Ações em ordem visual e com nomes acessíveis que
+  incluem o código (`sr-only`), apenas na aba do dono:
   1. "Abrir sala" (link, `bg-surface`);
   2. "Copiar" (secundário) — sempre disponível;
   3. "Regenerar" (secundário) — apenas sala aberta;
@@ -213,13 +221,13 @@ sem a aba "Participei" nesta entrega.
   preso ao diálogo, ESC/backdrop fecham quando não há envio em andamento e o foco volta ao
   gatilho (ou ao título da página quando a ação some, como em "Encerrar").
 - **Estados:** carregando (`role="status"` "Carregando salas…" mantendo o header), vazio
-  (`EmptyState` + "Criar sala"), erro sem dados (`role="alert"` + "Tentar novamente" ou
-  "Entrar novamente" em 401) e erro com cache (lista permanece + banner `role="alert"` com
-  retry).
+  (`EmptyState` + "Criar sala" na aba do dono; "Você ainda não participou de nenhuma sala", sem
+  ação, na aba "Participei"), erro sem dados (`role="alert"` + "Tentar novamente" ou "Entrar
+  novamente" em 401) e erro com cache (lista permanece + banner `role="alert"` com retry).
 - **Cache (SPEC §10):** TanStack Query com `staleTime` 30 s, `gcTime` 24 h e persistência em
-  `localStorage` apenas de consultas `rooms` bem-sucedidas. A chave inclui o `userId`, e o cache
-  (memória + armazenado) é limpo ao sair ou trocar de usuário. O token de sessão continua em
-  cookie `httpOnly` e nunca entra no cache.
+  `localStorage` apenas de consultas `rooms` bem-sucedidas (`rooms/mine` e `rooms/joined`). A
+  chave inclui o `userId`, e o cache (memória + armazenado) é limpo ao sair ou trocar de usuário.
+  O token de sessão continua em cookie `httpOnly` e nunca entra no cache.
 - **Responsivo** em 375, 768, 1024 e 1440 px.
 
 ## 7. Checklist de entrega
