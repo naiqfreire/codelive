@@ -190,7 +190,7 @@ sem a aba "Participei" nesta entrega.
   2. "Copiar" (secundário) — sempre disponível;
   3. "Regenerar" (secundário) — apenas sala aberta;
   4. "Encerrar" (destrutivo) — apenas sala aberta.
-  Alvos ≥ 44 px, `gap-2` e quebra de linha no mobile.
+     Alvos ≥ 44 px, `gap-2` e quebra de linha no mobile.
 - **Copiar código:** `navigator.clipboard.writeText`; sucesso anuncia "Copiado!" em
   `role="status" aria-live="polite"`. Sem Clipboard API ou com permissão negada, mostra
   "Não foi possível copiar. Selecione o código e copie manualmente." e o código continua
@@ -284,7 +284,7 @@ compostas por `CodeEntryRoute` e `JoinRoomRoute` em `app/routes/`.
   atual nesse caso.
 - **Passo visível:** "Passo 2 de 4" no código e "Passo 3 de 4" na identificação, em
   `text-xs font-medium tracking-[0.2em] text-accent uppercase`, seguidos de `h1` em `font-mono
-  text-3xl font-semibold tracking-tight` com `tabIndex={-1}` para receber foco programático.
+text-3xl font-semibold tracking-tight` com `tabIndex={-1}` para receber foco programático.
 - **Campo do código:** `TextField` com `hint` ("6 caracteres, como K7M2QX."), `font-mono`,
   `tracking-[0.25em] uppercase`, `autoComplete="off"`, `autoCapitalize="characters"`,
   `autoCorrect="off"` e `spellCheck={false}`. A normalização (`normalizeAccessCode`) roda a cada
@@ -324,7 +324,7 @@ fatias `rooms`, `live_code` e `membership` (regra de composição do `AGENTS.md`
 - **Título com o código ao lado.** O `h1` continua "Sua sala" (dono) e "Sala ao vivo" (espectador),
   em `font-mono text-2xl sm:text-3xl`; o código de acesso fica imediatamente ao lado, em chip
   `font-mono text-sm tracking-[0.2em] select-all` com botão "Copiar código K7M2QX" (`min-h-11
-  min-w-11`, ícone SVG `aria-hidden`). Motivo: `rooms` não tem coluna de nome — o código é a única
+min-w-11`, ícone SVG `aria-hidden`). Motivo: `rooms` não tem coluna de nome — o código é a única
   identidade da sala, e prometer um "nome da sala" seria inventar campo que não existe no banco.
 - **Somente leitura em dois níveis.** Badge textual "Somente leitura" no header, ao lado do status,
   e o aviso fixo já documentado em §6.6 quando a página o fornece. No dono, a sala encerrada usa
@@ -351,6 +351,56 @@ fatias `rooms`, `live_code` e `membership` (regra de composição do `AGENTS.md`
   com altura reservada (`min-h-5`), **sem** `role="status"` — o `role="status"` do espectador pertence
   ao `ConnectionStatus` (§6.6), e dois elementos com o mesmo papel tornam a região ambígua para
   leitores de tela.
+
+### 6.12 Histórico de versões da sala (#41)
+
+Painel do dono para consultar e restaurar versões (RF11). A fatia vive em `features/versions/`:
+`VersionHistoryPanel` é apresentacional (lista, seleção e confirmação) e `VersionHistory` é a
+composição conectada (API, cache e mensagens). A página do dono recebe o painel pelo render prop
+`renderVersionHistory(onRestored)` e o renderiza **abaixo do editor**; o callback devolve o conteúdo
+restaurado ao editor da página, sem duplicar o estado do código.
+
+- **Só o dono vê o painel.** O servidor continua sendo a autoridade: `403 forbidden` para qualquer
+  outra identidade. A interface nunca decide autorização.
+- **Lista somente de metadados.** O contrato de listagem (`VersionOut`, #40) é _hash-only_: a lista
+  traz `created_at`, `language`, `author_id` e `content_hash`, nunca o conteúdo. Cada linha mostra
+  data e hora (`dd/mm/aaaa às HH:mm:ss`, `America/Sao_Paulo`, igual a `rooms/format.ts`), a
+  linguagem, a origem — **Automática** quando `author_id` é nulo (job de snapshot) e **Restauração**
+  quando foi gravada pelo dono — e um prefixo curto de `content_hash` (`#a1b2c3d`), com o hash
+  completo em `title`. A prévia de conteúdo fica para uma tarefa futura que estenda o contrato.
+- **Ordem e volume.** Mais recente primeiro, com desempate por `id` igual ao do backend
+  (`created_at`, `id` descendentes). A API não pagina e a retenção guarda 30 dias de snapshots de
+  30 s; por isso o painel renderiza 20 linhas por vez e revela as anteriores em "Mostrar versões
+  anteriores" (sem dependência nova, sem virtualização).
+- **Seleção e restauração.** A lista é um `fieldset` com `legend` (visualmente oculto) e um
+  `radio` nativo por versão; setas do teclado funcionam sem código extra. Um único botão
+  "Restaurar versão" fica desabilitado sem seleção. Ele abre o `ConfirmDialog` da §6.7 com o
+  título "Restaurar versão de dd/mm/aaaa às HH:mm:ss?", o aviso de que o código será substituído e
+  uma nova versão será criada, e "Restaurando…" durante o envio. Enquanto o envio corre, ESC,
+  backdrop e "Cancelar" não fecham o diálogo.
+- **Sucesso.** O diálogo fecha, a seleção é limpa, a lista é invalidada (a nova versão aparece no
+  topo) e a região `aria-live="polite"` (sem `role="status"`, pela mesma razão da §6.11) anuncia
+  "Versão de … restaurada. O código da sala foi atualizado.". Falha mantém o diálogo aberto com a
+  mensagem mapeada (`room_closed`, `version_not_found`, `forbidden`, `not_authenticated`,
+  `network_error`), em `role="alert"`.
+- **Sala encerrada.** O histórico continua legível (o backend permite a listagem), mas restaurar
+  responde `409 room_closed`; o painel desabilita a ação e explica em texto: "Esta sala foi
+  encerrada. O histórico continua disponível, mas não é possível restaurar versões.".
+- **Estados.** Carregando: `role="status"` com `Spinner` e altura mínima reservada. Vazio:
+  `EmptyState` "Nenhuma versão ainda", explicando que a primeira versão aparece quando o código
+  muda. Erro sem dados: `role="alert"` com "Tentar novamente". Erro com dados em cache: a lista
+  permanece e um banner `role="alert"` oferece nova tentativa (mesmo padrão da §6.7).
+- **Cache (SPEC §10).** TanStack Query com chave `['versions', roomId]`, `staleTime` de 30 s,
+  `refetchOnWindowFocus` e invalidação explícita após restaurar. **Somente memória**: a lista muda a
+  cada 30 s enquanto a sala é editada, então persistir em `localStorage` serviria histórico
+  desatualizado; o estado atual do código nunca passa por cache (RNF02).
+- **Acessibilidade e responsividade.** Títulos em `font-mono`, alvos ≥ 44 px, foco visível,
+  `cursor-pointer`, nenhuma informação só por cor (origem e estado sempre em texto) e
+  `motion-safe`/`prefers-reduced-motion` respeitados. O painel ocupa a largura do corpo em todas as
+  faixas; o `aside` de participantes da §6.11 não muda.
+- **Revisão visual.** `DevOwnerRoomPage` liga o painel a uma API em memória e a um seletor
+  DEV-only de estados (Lista / Vazio / Carregando / Erro), porque as telas da sala ainda usam
+  fixtures. A restauração de desenvolvimento também atualiza o editor.
 
 ## 7. Checklist de entrega
 
