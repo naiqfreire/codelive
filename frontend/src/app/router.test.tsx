@@ -84,6 +84,44 @@ describe('router', () => {
     )
   })
 
+  it('renders the joined rooms tab from the query string', async () => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      const body = url.includes('/api/rooms/joined')
+        ? {
+            items: [
+              {
+                id: '55555555-5555-5555-5555-555555555555',
+                access_code: 'B4T9RS',
+                language: 'java',
+                status: 'active',
+                created_at: '2026-11-08T17:30:00Z',
+                joined_at: '2026-11-10T09:00:00Z',
+              },
+            ],
+          }
+        : []
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    })
+
+    renderRoute('/rooms?tab=joined')
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: /salas que participei/i }),
+    ).toBeInTheDocument()
+    expect(await screen.findByRole('link', { name: /assistir b4t9rs/i })).toHaveAttribute(
+      'href',
+      '/rooms/55555555-5555-5555-5555-555555555555/view',
+    )
+    expect(screen.getByRole('link', { name: 'Participei' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+  })
+
   it('sends an authenticated visitor from the login page to the room list', async () => {
     renderRoute('/login')
 
