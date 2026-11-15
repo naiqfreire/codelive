@@ -9,6 +9,9 @@ import type { RoomSummary } from '../types'
 type RoomCardProps = {
   room: RoomSummary
   href: string
+  openLabel?: string
+  joinedAt?: string
+  openable?: boolean
   onClose?: (room: RoomSummary) => void
   onRegenerateCode?: (room: RoomSummary) => void
 }
@@ -18,11 +21,20 @@ const LINK_CLASSES = [
   'hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none',
 ].join(' ')
 
-export function RoomCard({ room, href, onClose, onRegenerateCode }: RoomCardProps) {
+export function RoomCard({
+  room,
+  href,
+  openLabel = 'Abrir sala',
+  joinedAt,
+  openable = true,
+  onClose,
+  onRegenerateCode,
+}: RoomCardProps) {
   const [feedback, setFeedback] = useState('')
   const languageLabel =
     LANGUAGE_OPTIONS.find((option) => option.value === room.language)?.label ?? room.language
   const createdDate = formatRoomDate(room.createdAt)
+  const joinedDate = joinedAt ? formatRoomDate(joinedAt) : ''
   const isActive = room.status === 'active'
 
   async function handleCopy() {
@@ -41,13 +53,17 @@ export function RoomCard({ room, href, onClose, onRegenerateCode }: RoomCardProp
       <p className="text-sm text-muted-foreground">
         {languageLabel}
         {createdDate ? ` · criada em ${createdDate}` : null}
+        {joinedDate ? ` · entrou em ${joinedDate}` : null}
       </p>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Link to={href} className={LINK_CLASSES}>
-          Abrir sala<span className="sr-only"> {room.accessCode}</span>
-          <span aria-hidden="true">→</span>
-        </Link>
+        {openable ? (
+          <Link to={href} className={LINK_CLASSES}>
+            {openLabel}
+            <span className="sr-only"> {room.accessCode}</span>
+            <span aria-hidden="true">→</span>
+          </Link>
+        ) : null}
 
         <Button type="button" variant="secondary" className="px-4" onClick={() => void handleCopy()}>
           Copiar<span className="sr-only"> código {room.accessCode}</span>

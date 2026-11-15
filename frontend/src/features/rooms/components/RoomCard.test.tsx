@@ -13,6 +13,9 @@ const activeRoom: RoomSummary = {
 }
 
 type CardProps = {
+  openLabel?: string
+  joinedAt?: string
+  openable?: boolean
   onClose?: (room: RoomSummary) => void
   onRegenerateCode?: (room: RoomSummary) => void
 }
@@ -67,6 +70,28 @@ describe('RoomCard', () => {
     renderCard()
 
     expect(screen.getByRole('link', { name: /abrir sala k7m2qx/i })).toBeInTheDocument()
+  })
+
+  it('uses a custom open label while keeping the code in the accessible name', () => {
+    renderCard(activeRoom, '/rooms/1/view', { openLabel: 'Assistir' })
+
+    expect(screen.getByRole('link', { name: /assistir k7m2qx/i })).toHaveAttribute(
+      'href',
+      '/rooms/1/view',
+    )
+  })
+
+  it('shows when the user joined the room', () => {
+    renderCard(activeRoom, '/rooms/1/view', { joinedAt: '2026-11-10T09:00:00Z' })
+
+    expect(screen.getByText(/entrou em 10\/11\/2026/i)).toBeInTheDocument()
+  })
+
+  it('hides the open link when the room cannot be watched', () => {
+    renderCard(activeRoom, '/rooms/1/view', { openable: false })
+
+    expect(screen.queryByRole('link')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /copiar código k7m2qx/i })).toBeInTheDocument()
   })
 
   it('copies the access code and announces success', async () => {
