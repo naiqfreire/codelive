@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { Button, EmptyState } from '../../shared/components'
 import { LanguageSelector } from '../../features/rooms'
@@ -11,6 +12,11 @@ type OwnerRoomPageProps = {
   onClose?: () => void
   onRegenerateCode?: () => void
   onLanguageChange?: (language: RoomLanguage) => void
+  /**
+   * Owner-only version history, wired by the composition that owns the API.
+   * The callback applies the restored content to the editor below.
+   */
+  renderVersionHistory?: (onRestored: (content: string) => void) => ReactNode
 }
 
 type RoomActionsProps = {
@@ -51,6 +57,7 @@ export default function OwnerRoomPage({
   onClose,
   onRegenerateCode,
   onLanguageChange,
+  renderVersionHistory,
 }: OwnerRoomPageProps) {
   const [code, setCode] = useState(room?.code ?? '')
   const isClosed = room?.status === 'closed'
@@ -83,11 +90,7 @@ export default function OwnerRoomPage({
         readOnly={isClosed}
         readOnlyNotice={CLOSED_NOTICE}
         actions={
-          <RoomActions
-            isClosed={isClosed}
-            onClose={onClose}
-            onRegenerateCode={onRegenerateCode}
-          />
+          <RoomActions isClosed={isClosed} onClose={onClose} onRegenerateCode={onRegenerateCode} />
         }
         languageControl={
           <LanguageSelector
@@ -106,6 +109,7 @@ export default function OwnerRoomPage({
           label="Editor de código"
           className="h-[60vh] lg:h-[70vh]"
         />
+        {renderVersionHistory ? <div className="mt-4">{renderVersionHistory(setCode)}</div> : null}
       </RoomLayout>
     </section>
   )

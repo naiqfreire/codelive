@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react'
+import type { ReactElement } from 'react'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
 import type { RoomDetail } from '../../features/rooms'
@@ -18,6 +19,7 @@ type PageProps = {
   onClose?: () => void
   onRegenerateCode?: () => void
   onLanguageChange?: (language: RoomDetail['language']) => void
+  renderVersionHistory?: (onRestored: (content: string) => void) => ReactElement
 }
 
 function renderRoom(props: PageProps = {}) {
@@ -102,16 +104,39 @@ describe('OwnerRoomPage', () => {
     expect(screen.getByRole('link', { name: /voltar/i })).toHaveAttribute('href', '/rooms')
   })
 
+  it('renders the version history slot below the editor', () => {
+    renderRoom({ renderVersionHistory: () => <p>Histórico de teste</p> })
+
+    expect(screen.getByText('Histórico de teste')).toBeInTheDocument()
+  })
+
+  it('applies the restored content to the editor', () => {
+    renderRoom({
+      renderVersionHistory: (onRestored) => (
+        <button type="button" onClick={() => onRestored("print('restaurado')\n")}>
+          Restaurar de teste
+        </button>
+      ),
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Restaurar de teste' }))
+
+    expect(screen.getByRole('textbox', { name: /editor de código/i })).toHaveTextContent(
+      "print('restaurado')",
+    )
+  })
+
   it('shows a not-found state without a room', () => {
     render(
       <MemoryRouter>
-        <OwnerRoomPage />
+        <OwnerRoomPage renderVersionHistory={() => <p>Histórico de teste</p>} />
       </MemoryRouter>,
     )
 
     expect(screen.getByText(/sala não encontrada/i)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /voltar/i })).toHaveAttribute('href', '/rooms')
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    expect(screen.queryByText('Histórico de teste')).not.toBeInTheDocument()
   })
 })
 
