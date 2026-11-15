@@ -11,6 +11,7 @@ from app.features.auth import router as auth
 from app.features.live_code import router as live_code
 from app.features.rooms import router as rooms
 from app.features.versions import job
+from app.features.versions import router as versions
 from app.shared import health
 from app.shared.asyncio_policy import ensure_selector_event_loop
 from app.shared.config import get_settings
@@ -53,4 +54,5 @@ api.include_router(auth.protected_router, prefix="/auth")
 api.include_router(rooms.router, prefix="/rooms")
 api.include_router(rooms.public_router, prefix="/rooms")
 api.include_router(live_code.router, prefix="/ws")
+api.include_router(versions.router, prefix="/rooms")
 app.include_router(api)
