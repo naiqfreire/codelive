@@ -15,6 +15,7 @@ class ErrorCode:
     INTERNAL_ERROR = "internal_error"
     ROOM_NOT_FOUND = "room_not_found"
     ROOM_CLOSED = "room_closed"
+    VERSION_NOT_FOUND = "version_not_found"
 
 
 ERROR_MESSAGES: dict[str, str] = {
@@ -27,6 +28,7 @@ ERROR_MESSAGES: dict[str, str] = {
     ErrorCode.INTERNAL_ERROR: "Erro interno do servidor.",
     ErrorCode.ROOM_NOT_FOUND: "Sala não encontrada.",
     ErrorCode.ROOM_CLOSED: "Sala encerrada.",
+    ErrorCode.VERSION_NOT_FOUND: "Versão não encontrada.",
 }
 
 _PORTUGUESE_REASONS = {

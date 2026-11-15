@@ -13,7 +13,12 @@ from app.shared.errors import ErrorCode
 if TYPE_CHECKING:
     from app.features.auth.models import User
 
-__all__ = ["authorize_room_identity", "get_room_status", "list_room_languages"]
+__all__ = [
+    "authorize_room_identity",
+    "get_room_owner_status_language",
+    "get_room_status",
+    "list_room_languages",
+]
 
 
 async def authorize_room_identity(
@@ -45,6 +50,25 @@ async def authorize_room_identity(
         raise HTTPException(status_code=403, detail=ErrorCode.FORBIDDEN)
     role = "owner" if (user is not None and room.owner_id == user.id) else "viewer"
     return room, role
+
+
+async def get_room_owner_status_language(
+    session: AsyncSession, room_id: uuid.UUID
+) -> tuple[uuid.UUID, str, str] | None:
+    """Return ``(owner_id, status, language)`` for a room, or None if absent.
+
+    Read-only and commit-free. A column-level select is deliberate: it always
+    issues SQL, so the owner rule, the closed-room refusal and the snapshot
+    frame's language all read one fresh row (D-01/D-05 precedent: no
+    identity-map answers for cross-slice reads).
+    """
+    result = await session.execute(
+        select(Room.owner_id, Room.status, Room.language).where(Room.id == room_id)
+    )
+    row = result.one_or_none()
+    if row is None:
+        return None
+    return row.owner_id, row.status, row.language
 
 
 async def get_room_status(session: AsyncSession, room_id: uuid.UUID) -> str | None:
