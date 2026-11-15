@@ -1,10 +1,19 @@
 """Cross-slice membership contract — the ONLY module other slices may import."""
+import uuid
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.features.membership.models import RoomMember
 
-__all__ = ["RoomMember", "create_member", "create_owner_member", "get_membership", "list_memberships_for_user"]
+__all__ = [
+    "RoomMember",
+    "create_member",
+    "create_owner_member",
+    "get_membership",
+    "list_member_user_ids",
+    "list_memberships_for_user",
+]
 
 
 def create_member(
@@ -64,17 +73,32 @@ async def get_membership(
     return row
 
 
-async def list_memberships_for_user(session: AsyncSession, user_id) -> list[RoomMember]:
-    """Return every membership row for the user, newest first."""
-    rows = (
-        (
-            await session.execute(
-                select(RoomMember)
-                .where(RoomMember.user_id == user_id)
-                .order_by(RoomMember.joined_at.desc(), RoomMember.id.desc())
-            )
-        )
-        .scalars()
-        .all()
-    )
+async def list_memberships_for_user(
+    session: AsyncSession, user_id, *, role: str | None = None
+) -> list[RoomMember]:
+    """Return every membership row for the user, newest first.
+
+    ``role`` narrows the result to one role (``"owner"`` or ``"viewer"``) when
+    given. Read-only and commit-free.
+    """
+    statement = select(RoomMember).where(RoomMember.user_id == user_id)
+    if role is not None:
+        statement = statement.where(RoomMember.role == role)
+    statement = statement.order_by(RoomMember.joined_at.desc(), RoomMember.id.desc())
+    rows = (await session.execute(statement)).scalars().all()
     return list(rows)
+
+
+async def list_member_user_ids(session: AsyncSession, room_id) -> list[uuid.UUID]:
+    """Return the user ids of the room's authenticated members.
+
+    Anonymous members have no ``user_id`` and are excluded. Read-only and
+    commit-free; used to invalidate per-user caches after a room mutation.
+    """
+    rows = await session.execute(
+        select(RoomMember.user_id).where(
+            RoomMember.room_id == room_id,
+            RoomMember.user_id.is_not(None),
+        )
+    )
+    return list(rows.scalars().all())

@@ -13,6 +13,7 @@ def test_public_surface_is_exact():
         "create_member",
         "create_owner_member",
         "get_membership",
+        "list_member_user_ids",
         "list_memberships_for_user",
     ]
 
@@ -211,3 +212,79 @@ def test_membership_does_not_import_other_slices():
     assert "app.features.auth" not in inspect.getsource(m.public)
     assert "app.features.rooms" not in inspect.getsource(m.models)
     assert "app.features.auth" not in inspect.getsource(m.models)
+
+
+def _list_session(rows):
+    class _Result:
+        def scalars(self):
+            return self
+
+        def all(self):
+            return rows
+
+    class _Session:
+        def __init__(self):
+            self.statements = []
+
+        async def execute(self, stmt):
+            self.statements.append(stmt)
+            return _Result()
+
+    return _Session()
+
+
+async def test_list_memberships_for_user_filters_by_role():
+    from app.features.membership.public import list_memberships_for_user
+
+    user_id = uuid.uuid7()
+    viewer = RoomMember(room_id=uuid.uuid7(), user_id=user_id, role="viewer", is_anonymous=False)
+    session = _list_session([viewer])
+
+    rows = await list_memberships_for_user(session, user_id, role="viewer")
+
+    assert rows == [viewer]
+    sql = str(session.statements[0])
+    where_clause = sql.split("WHERE", 1)[1]
+    assert "user_id" in where_clause
+    assert "role" in where_clause
+    assert "joined_at DESC" in sql
+    assert "id DESC" in sql
+
+
+async def test_list_memberships_for_user_without_role_does_not_filter_role():
+    from app.features.membership.public import list_memberships_for_user
+
+    user_id = uuid.uuid7()
+    session = _list_session([])
+
+    rows = await list_memberships_for_user(session, user_id)
+
+    assert rows == []
+    where_clause = str(session.statements[0]).split("WHERE", 1)[1]
+    assert "user_id" in where_clause
+    assert "role" not in where_clause
+
+
+async def test_list_member_user_ids_returns_authenticated_members():
+    from app.features.membership.public import list_member_user_ids
+
+    room_id = uuid.uuid7()
+    member_ids = [uuid.uuid7(), uuid.uuid7()]
+    session = _list_session(member_ids)
+
+    found = await list_member_user_ids(session, room_id)
+
+    assert found == member_ids
+    sql = str(session.statements[0])
+    assert "room_members.user_id" in sql
+    assert "room_members.room_id" in sql
+    assert "IS NOT NULL" in sql.upper()
+
+
+def test_list_member_user_ids_is_async_and_commit_free():
+    from app.features.membership import public
+
+    assert inspect.iscoroutinefunction(public.list_member_user_ids) is True
+    source = inspect.getsource(public)
+    assert ".commit(" not in source
+    assert ".rollback(" not in source
