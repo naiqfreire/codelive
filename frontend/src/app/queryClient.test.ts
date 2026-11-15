@@ -38,6 +38,7 @@ describe('queryClient', () => {
     expect(options.maxAge).toBe(QUERY_CACHE_MAX_AGE)
     expect(options.buster).toBe(QUERY_CACHE_BUSTER)
     expect(shouldDehydrate?.(fakeQuery(['rooms', 'mine', 'user-1'], 'success'))).toBe(true)
+    expect(shouldDehydrate?.(fakeQuery(['rooms', 'joined', 'user-1'], 'success'))).toBe(true)
     expect(shouldDehydrate?.(fakeQuery(['rooms', 'mine', 'user-1'], 'error'))).toBe(false)
     expect(shouldDehydrate?.(fakeQuery(['auth', 'me'], 'success'))).toBe(false)
   })
