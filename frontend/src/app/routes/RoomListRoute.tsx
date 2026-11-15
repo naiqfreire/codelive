@@ -1,10 +1,12 @@
 /** Composition: wires the room list to the API, the query cache and the auth session. */
+import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../features/auth'
 import {
   roomsApi,
   roomsErrorMessage,
   useCloseRoom,
   useCreateRoom,
+  useJoinedRooms,
   useMyRooms,
   useRegenerateRoomCode,
 } from '../../features/rooms'
@@ -20,14 +22,18 @@ type RoomListRouteProps = {
 
 export default function RoomListRoute({ api = roomsApi }: RoomListRouteProps) {
   const { user, logout } = useAuth()
+  const [searchParams] = useSearchParams()
+  const tab = searchParams.get('tab') === 'joined' ? 'joined' : 'mine'
   const userId = user?.id ?? ''
 
   const roomsQuery = useMyRooms(user?.id, api)
+  const joinedQuery = useJoinedRooms(user?.id, api, tab === 'joined')
+  const activeQuery = tab === 'joined' ? joinedQuery : roomsQuery
   const createRoom = useCreateRoom(userId, api)
   const closeRoom = useCloseRoom(userId, api)
   const regenerateCode = useRegenerateRoomCode(userId, api)
 
-  const error = roomsQuery.error
+  const error = activeQuery.error
   const isSessionExpired = error instanceof ApiError && error.status === 401
   const errorMessage = error ? roomsErrorMessage(error, LOAD_ERROR_FALLBACK) : null
 
@@ -36,7 +42,7 @@ export default function RoomListRoute({ api = roomsApi }: RoomListRouteProps) {
       void logout()
       return
     }
-    void roomsQuery.refetch()
+    void activeQuery.refetch()
   }
 
   const handleCreate = (language: RoomLanguage): Promise<RoomSummary> =>
@@ -47,8 +53,9 @@ export default function RoomListRoute({ api = roomsApi }: RoomListRouteProps) {
 
   return (
     <RoomListPage
-      rooms={roomsQuery.data ?? []}
-      isLoading={roomsQuery.isLoading}
+      tab={tab}
+      rooms={activeQuery.data ?? []}
+      isLoading={activeQuery.isLoading}
       errorMessage={errorMessage}
       isSessionExpired={isSessionExpired}
       onRetry={handleRetry}

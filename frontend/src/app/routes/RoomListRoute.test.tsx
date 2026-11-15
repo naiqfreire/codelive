@@ -67,11 +67,11 @@ function createFakeRoomsApi(overrides: Partial<RoomsApi> = {}): RoomsApi {
   }
 }
 
-function renderRoute(api: RoomsApi = createFakeRoomsApi()) {
+function renderRoute(api: RoomsApi = createFakeRoomsApi(), path = '/rooms') {
   return render(
     <QueryProvider>
       <AuthProvider api={createFakeAuthApi()}>
-        <MemoryRouter initialEntries={['/rooms']}>
+        <MemoryRouter initialEntries={[path]}>
           <RoomListRoute api={api} />
         </MemoryRouter>
       </AuthProvider>
@@ -153,5 +153,46 @@ describe('RoomListRoute', () => {
       await screen.findByRole('button', { name: /entrar novamente/i }),
     ).toBeInTheDocument()
     expect(TEST_USER.id).toBeTruthy()
+  })
+
+  it('keeps the joined list lazy until the Participei tab is opened', async () => {
+    const api = createFakeRoomsApi()
+    renderRoute(api)
+
+    await screen.findByRole('heading', { name: 'K7M2QX' })
+    expect(api.listJoined).not.toHaveBeenCalled()
+  })
+
+  it('loads the joined rooms when the Participei tab is opened', async () => {
+    const api = createFakeRoomsApi()
+    renderRoute(api)
+
+    await screen.findByRole('heading', { name: 'K7M2QX' })
+    fireEvent.click(screen.getByRole('link', { name: 'Participei' }))
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Salas que participei' }),
+    ).toBeInTheDocument()
+    await waitFor(() => expect(api.listJoined).toHaveBeenCalledTimes(1))
+    expect(await screen.findByRole('heading', { name: 'B4T9RS' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /assistir b4t9rs/i })).toHaveAttribute(
+      'href',
+      `/rooms/${joinedRoom.id}/view`,
+    )
+    expect(screen.queryByRole('link', { name: /z2y8nm/i })).not.toBeInTheDocument()
+  })
+
+  it('opens the joined tab directly from the URL', async () => {
+    const api = createFakeRoomsApi()
+    renderRoute(api, '/rooms?tab=joined')
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Salas que participei' }),
+    ).toBeInTheDocument()
+    expect(api.listJoined).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('link', { name: 'Participei' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
   })
 })
