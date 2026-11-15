@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Button, EmptyState } from '../../shared/components'
 import {
   ConfirmDialog,
@@ -6,12 +7,18 @@ import {
   RoomCard,
   roomsErrorMessage,
 } from '../../features/rooms'
-import type { RoomLanguage, RoomSummary } from '../../features/rooms'
+import type { RoomLanguage, RoomListItem, RoomSummary } from '../../features/rooms'
 
 const LOAD_ERROR_FALLBACK = 'Não foi possível carregar suas salas. Tente novamente.'
+const JOINED_LOAD_ERROR_FALLBACK = 'Não foi possível carregar as salas que você participou.'
 const CREATE_ERROR_FALLBACK = 'Não foi possível criar a sala. Tente novamente.'
 const CLOSE_ERROR_FALLBACK = 'Não foi possível encerrar a sala. Tente novamente.'
 const REGENERATE_ERROR_FALLBACK = 'Não foi possível regenerar o código. Tente novamente.'
+
+const TAB_CLASSES =
+  'inline-flex min-h-11 items-center rounded-lg px-3 text-sm font-medium transition focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none'
+
+type RoomTab = 'mine' | 'joined'
 
 type PendingAction = {
   kind: 'close' | 'regenerate'
@@ -19,7 +26,8 @@ type PendingAction = {
 }
 
 type RoomListPageProps = {
-  rooms: RoomSummary[]
+  tab?: RoomTab
+  rooms: RoomListItem[]
   isLoading?: boolean
   errorMessage?: string | null
   isSessionExpired?: boolean
@@ -34,6 +42,7 @@ function countLabel(count: number, singular: string, plural: string) {
 }
 
 export default function RoomListPage({
+  tab = 'mine',
   rooms,
   isLoading = false,
   errorMessage = null,
@@ -51,6 +60,12 @@ export default function RoomListPage({
   const [actionError, setActionError] = useState<string | null>(null)
   const [announcement, setAnnouncement] = useState('')
 
+  const isJoinedTab = tab === 'joined'
+  const heading = isJoinedTab ? 'Salas que participei' : 'Minhas salas'
+  const description = isJoinedTab
+    ? 'Salas em que você entrou como espectador, com acesso rápido para assistir.'
+    : 'Crie salas, compartilhe o código de acesso e gerencie o que já aconteceu.'
+  const loadErrorFallback = isJoinedTab ? JOINED_LOAD_ERROR_FALLBACK : LOAD_ERROR_FALLBACK
   const openCount = rooms.filter((room) => room.status === 'active').length
   const closedCount = rooms.length - openCount
   const hasRooms = rooms.length > 0
@@ -137,16 +152,43 @@ export default function RoomListPage({
             tabIndex={-1}
             className="font-mono text-3xl font-semibold tracking-tight focus-visible:outline-none"
           >
-            Minhas salas
+            {heading}
           </h1>
-          <p className="mt-2 text-muted-foreground">
-            Crie salas, compartilhe o código de acesso e gerencie o que já aconteceu.
-          </p>
+          <p className="mt-2 text-muted-foreground">{description}</p>
         </div>
-        <Button type="button" onClick={openCreateDialog}>
-          Nova sala
-        </Button>
+        {isJoinedTab ? null : (
+          <Button type="button" onClick={openCreateDialog}>
+            Nova sala
+          </Button>
+        )}
       </header>
+
+      <nav aria-label="Filtro de salas" className="mt-6 flex flex-wrap gap-2">
+        <Link
+          to="/rooms"
+          aria-current={isJoinedTab ? undefined : 'page'}
+          className={[
+            TAB_CLASSES,
+            isJoinedTab
+              ? 'text-muted-foreground hover:text-foreground'
+              : 'bg-muted text-foreground',
+          ].join(' ')}
+        >
+          Criadas por mim
+        </Link>
+        <Link
+          to="/rooms?tab=joined"
+          aria-current={isJoinedTab ? 'page' : undefined}
+          className={[
+            TAB_CLASSES,
+            isJoinedTab
+              ? 'bg-muted text-foreground'
+              : 'text-muted-foreground hover:text-foreground',
+          ].join(' ')}
+        >
+          Participei
+        </Link>
+      </nav>
 
       {announcement ? (
         <p role="status" aria-live="polite" className="sr-only">
@@ -178,7 +220,7 @@ export default function RoomListPage({
           className="mt-8 flex flex-col items-start gap-3 rounded-xl border border-destructive/60 bg-muted p-6"
         >
           <p className="text-sm text-foreground">
-            {errorMessage ?? LOAD_ERROR_FALLBACK}
+            {errorMessage ?? loadErrorFallback}
           </p>
           {onRetry ? (
             <Button type="button" onClick={onRetry}>
@@ -188,15 +230,22 @@ export default function RoomListPage({
         </div>
       ) : !hasRooms ? (
         <div className="mt-8">
-          <EmptyState
-            title="Nenhuma sala ainda"
-            description="Crie sua primeira sala, escolha a linguagem e compartilhe o código com a turma."
-            action={
-              <Button type="button" onClick={openCreateDialog}>
-                Criar sala
-              </Button>
-            }
-          />
+          {isJoinedTab ? (
+            <EmptyState
+              title="Você ainda não participou de nenhuma sala"
+              description="Peça o código de acesso ao dono da sala e entre para assistir à aula ao vivo."
+            />
+          ) : (
+            <EmptyState
+              title="Nenhuma sala ainda"
+              description="Crie sua primeira sala, escolha a linguagem e compartilhe o código com a turma."
+              action={
+                <Button type="button" onClick={openCreateDialog}>
+                  Criar sala
+                </Button>
+              }
+            />
+          )}
         </div>
       ) : (
         <>
@@ -209,9 +258,16 @@ export default function RoomListPage({
               <li key={room.id}>
                 <RoomCard
                   room={room}
-                  href={`/rooms/${room.id}`}
-                  onClose={(target) => openConfirmation('close', target)}
-                  onRegenerateCode={(target) => openConfirmation('regenerate', target)}
+                  href={isJoinedTab ? `/rooms/${room.id}/view` : `/rooms/${room.id}`}
+                  openLabel={isJoinedTab ? 'Assistir' : undefined}
+                  joinedAt={isJoinedTab ? room.joinedAt : undefined}
+                  openable={!isJoinedTab || room.status === 'active'}
+                  onClose={
+                    isJoinedTab ? undefined : (target) => openConfirmation('close', target)
+                  }
+                  onRegenerateCode={
+                    isJoinedTab ? undefined : (target) => openConfirmation('regenerate', target)
+                  }
                 />
               </li>
             ))}

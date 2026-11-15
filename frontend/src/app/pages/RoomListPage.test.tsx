@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
-import type { RoomLanguage, RoomSummary } from '../../features/rooms'
+import type { JoinedRoom, RoomLanguage, RoomListItem, RoomSummary } from '../../features/rooms'
 import RoomListPage from './RoomListPage'
 
 const activeRoom: RoomSummary = {
@@ -35,8 +35,19 @@ const createdRoom: RoomSummary = {
   language: 'java',
 }
 
+const joinedActiveRoom: JoinedRoom = {
+  ...activeRoom,
+  joinedAt: '2026-11-10T09:00:00Z',
+}
+
+const joinedClosedRoom: JoinedRoom = {
+  ...closedRoom,
+  joinedAt: '2026-11-11T10:00:00Z',
+}
+
 type PageProps = {
-  rooms?: RoomSummary[]
+  tab?: 'mine' | 'joined'
+  rooms?: RoomListItem[]
   isLoading?: boolean
   errorMessage?: string | null
   isSessionExpired?: boolean
@@ -48,7 +59,8 @@ type PageProps = {
 
 function renderPage(overrides: PageProps = {}) {
   const props = {
-    rooms: [activeRoom, secondRoom, closedRoom],
+    tab: 'mine' as const,
+    rooms: [activeRoom, secondRoom, closedRoom] as RoomListItem[],
     isLoading: false,
     errorMessage: null,
     isSessionExpired: false,
@@ -73,14 +85,54 @@ describe('RoomListPage', () => {
     expect(await screen.findAllByRole('heading', { level: 2 })).toHaveLength(3)
   })
 
-  it('titles the page "Minhas salas" without the joined tab', async () => {
+  it('renders the room tabs with the owner tab active by default', async () => {
     renderPage()
 
     expect(
-      await screen.findByRole('heading', { level: 1, name: 'Minhas salas' }),
+      await screen.findByRole('navigation', { name: /filtro de salas/i }),
     ).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: /participei/i })).not.toBeInTheDocument()
-    expect(screen.queryByRole('navigation', { name: /filtro de salas/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Criadas por mim' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+    expect(screen.getByRole('link', { name: 'Participei' })).not.toHaveAttribute('aria-current')
+    expect(screen.getByRole('button', { name: 'Nova sala' })).toBeInTheDocument()
+  })
+
+  it('titles the joined tab and renders spectator cards without management actions', async () => {
+    renderPage({ tab: 'joined', rooms: [joinedActiveRoom, joinedClosedRoom] })
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Salas que participei' }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Participei' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+    expect(screen.getByRole('link', { name: /assistir k7m2qx/i })).toHaveAttribute(
+      'href',
+      `/rooms/${activeRoom.id}/view`,
+    )
+    expect(screen.getAllByText(/entrou em 10\/11\/2026/i)).toHaveLength(1)
+    expect(screen.getByText(/entrou em 11\/11\/2026/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Nova sala' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /encerrar sala/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /regenerar código/i })).not.toBeInTheDocument()
+  })
+
+  it('does not offer a link to a closed joined room', async () => {
+    renderPage({ tab: 'joined', rooms: [joinedClosedRoom] })
+
+    expect(await screen.findByRole('heading', { name: 'Z2Y8NM' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /z2y8nm/i })).not.toBeInTheDocument()
+    expect(screen.getByText('Encerrada')).toBeInTheDocument()
+  })
+
+  it('shows the joined empty state without a create action', async () => {
+    renderPage({ tab: 'joined', rooms: [] })
+
+    expect(await screen.findByText(/ainda não participou de nenhuma sala/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /criar sala/i })).not.toBeInTheDocument()
   })
 
   it('summarizes the open and closed counts', async () => {
