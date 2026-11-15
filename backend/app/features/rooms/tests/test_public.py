@@ -78,7 +78,12 @@ def _viewer_row(room_id, user_id=None, anonymous_session_id=None):
 
 def test_public_surface_is_exact():
     public = __import__("app.features.rooms.public", fromlist=["x"])
-    assert public.__all__ == ["authorize_room_identity", "get_room_status", "list_room_languages"]
+    assert public.__all__ == [
+        "authorize_room_identity",
+        "get_room_owner_status_language",
+        "get_room_status",
+        "list_room_languages",
+    ]
 
 
 def test_rooms_public_does_not_import_other_slices():
