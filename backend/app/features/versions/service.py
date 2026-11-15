@@ -16,8 +16,10 @@ import hashlib
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
+from typing import TYPE_CHECKING
 
 import structlog
+from fastapi import HTTPException
 from sqlalchemy import Delete, delete, insert, select
 from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,9 +27,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.features.live_code import public as live_code_public
 from app.features.rooms import public as rooms_public
 from app.features.versions.models import CodeVersion
+from app.features.versions.schemas import RestoreResponse, VersionOut
+from app.shared.errors import ErrorCode
 
 RETENTION_DAYS = 30  # D-08: strictly older than 30 days
 log = structlog.get_logger()
+
+if TYPE_CHECKING:
+    from app.features.auth.models import User
 
 
 def retention_cutoff(now: datetime | None = None) -> datetime:
@@ -163,6 +170,37 @@ async def collect_changed_rooms(
     return changed
 
 
+async def _insert_version(
+    session: AsyncSession,
+    room_id: uuid.UUID,
+    content: str,
+    language: str,
+    author_id: uuid.UUID | None,
+) -> CodeVersion:
+    """Insert one immutable version row and return it — WITHOUT committing.
+
+    The single insert idiom for every writer of ``code_versions``: the
+    snapshot job (``author_id=None``, Phase 7) and the restore path
+    (``author_id`` = the restoring owner, VERS-05). Callers own the
+    transaction boundary. Core ``insert`` (the
+    ``live_code.service.persist_code_update`` idiom) rather than ORM object
+    construction: it does not force the ``users`` table into
+    ``Base.metadata`` just to resolve ``author_id``'s FK target.
+    """
+    stmt = (
+        insert(CodeVersion)
+        .values(
+            room_id=room_id,
+            content=content,
+            language=language,
+            author_id=author_id,
+        )
+        .returning(CodeVersion)
+    )
+    result = await session.execute(stmt)
+    return result.scalar_one()
+
+
 async def create_version(
     session: AsyncSession,
     room_id: uuid.UUID,
@@ -175,22 +213,136 @@ async def create_version(
     function inserts what the caller says changed. ``author_id`` stays NULL —
     the job is the author-free writer (Phase 6 D-10). Commits before return
     so the job logs only after the write is durable.
-
-    Core ``insert`` (the ``live_code.service.persist_code_update`` idiom)
-    rather than ORM object construction: it does not force the ``users``
-    table into ``Base.metadata`` just to resolve ``author_id``'s FK target.
     """
-    stmt = (
-        insert(CodeVersion)
-        .values(
-            room_id=room_id,
-            content=content,
-            language=language,
-            author_id=None,
-        )
-        .returning(CodeVersion)
-    )
-    result = await session.execute(stmt)
-    version = result.scalar_one()
+    version = await _insert_version(session, room_id, content, language, author_id=None)
     await session.commit()
     return version
+
+
+async def list_versions(
+    session: AsyncSession,
+    room_id: uuid.UUID,
+    user: "User | None",
+) -> list[VersionOut]:
+    """Owner-only chronological listing of a room's versions (VERS-04, D-01..D-07).
+
+    Guard ladder (D-02): 404 unknown room -> 403 any identity that is not the
+    owner (an anonymous identity is never the owner). There is deliberately no
+    closed-room check: reading history is not an edit (D-04).
+
+    The listing is the full list, one row per version, ordered ``created_at
+    ASC, id ASC`` (D-07). ``content`` is selected only to compute
+    ``content_hash`` in Python; it is never serialized into ``VersionOut``.
+    Read-only and commit-free.
+    """
+    room = await rooms_public.get_room_owner_status_language(session, room_id)
+    if room is None:
+        raise HTTPException(status_code=404, detail=ErrorCode.ROOM_NOT_FOUND)
+    owner_id, _status, _language = room
+    if user is None or owner_id != user.id:
+        raise HTTPException(status_code=403, detail=ErrorCode.FORBIDDEN)
+    stmt = (
+        select(
+            CodeVersion.id,
+            CodeVersion.created_at,
+            CodeVersion.content,
+            CodeVersion.language,
+            CodeVersion.author_id,
+        )
+        .where(CodeVersion.room_id == room_id)
+        .order_by(CodeVersion.created_at.asc(), CodeVersion.id.asc())
+    )
+    rows = (await session.execute(stmt)).all()
+    return [
+        VersionOut(
+            id=row.id,
+            created_at=row.created_at,
+            content_hash=_content_hash(row.content),
+            language=row.language,
+            author_id=row.author_id,
+        )
+        for row in rows
+    ]
+
+
+async def restore_version(
+    session: AsyncSession,
+    room_id: uuid.UUID,
+    version_id: uuid.UUID,
+    user: "User | None",
+) -> RestoreResponse:
+    """Restore one version of a room the caller owns (VERS-05, D-01..D-09).
+
+    Guard ladder (D-02/D-05): 404 unknown room -> 403 any identity that is
+    not the owner (an anonymous identity is never the owner) -> 409 closed
+    room -> 404 version not in this room (unknown and cross-room
+    indistinguishable, Pitfall 4).
+
+    Transaction (ROADMAP criterion 3): the state upsert and the authored
+    version insert run on THIS session and close with ONE commit; the
+    broadcast fires only after the commit and the success log. The response
+    is built from the ``.returning()`` row values, never from
+    identity-map state (Pitfall 5).
+    """
+    started = time.perf_counter()
+    room = await rooms_public.get_room_owner_status_language(session, room_id)
+    if room is None:
+        raise HTTPException(status_code=404, detail=ErrorCode.ROOM_NOT_FOUND)
+    owner_id, status, language = room
+    if user is None or owner_id != user.id:
+        raise HTTPException(status_code=403, detail=ErrorCode.FORBIDDEN)
+    if status != "active":
+        raise HTTPException(status_code=409, detail=ErrorCode.ROOM_CLOSED)
+    version_row = (
+        await session.execute(
+            select(CodeVersion).where(
+                CodeVersion.id == version_id, CodeVersion.room_id == room_id
+            )
+        )
+    ).scalar_one_or_none()
+    if version_row is None:
+        raise HTTPException(status_code=404, detail=ErrorCode.VERSION_NOT_FOUND)
+
+    try:
+        # No short-circuit for identical content (AGENTS.md fixed decision):
+        # the state write and the new version always happen.
+        await live_code_public.write_current_state(session, room_id, version_row.content)
+        new_version = await _insert_version(
+            session,
+            room_id,
+            version_row.content,
+            version_row.language,
+            author_id=user.id,
+        )
+        new_version_id = new_version.id
+        new_created_at = new_version.created_at
+        await session.commit()
+    except Exception as exc:
+        duration_ms = round((time.perf_counter() - started) * 1000, 3)
+        log.error(
+            "version_restore_failed",
+            duration_ms=duration_ms,
+            error_type=type(exc).__name__,
+        )
+        raise
+
+    content_hash = _content_hash(version_row.content)
+    duration_ms = round((time.perf_counter() - started) * 1000, 3)
+    log.info(
+        "version_restored",
+        room_id=str(room_id),
+        restored_version_id=str(version_id),
+        new_version_id=str(new_version_id),
+        content_hash=content_hash,
+        user_id=str(user.id),
+        duration_ms=duration_ms,
+    )
+    await live_code_public.broadcast_snapshot(
+        room_id, version_row.content, language
+    )
+    return RestoreResponse(
+        content=version_row.content,
+        content_hash=content_hash,
+        id=new_version_id,
+        created_at=new_created_at,
+    )
