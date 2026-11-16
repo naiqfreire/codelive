@@ -19,6 +19,7 @@ function renderShell(
         children: [
           { index: true, element: <p>Conteúdo roteado</p> },
           { path: 'join', element: <p>tela do código</p> },
+          { path: 'joined', element: <p>tela participei</p> },
         ],
       },
       { path: '/login', element: <p>tela de login</p> },
@@ -67,6 +68,19 @@ describe('AppShell', () => {
       'page',
     )
     expect(screen.getByRole('link', { name: /minhas salas/i })).not.toHaveAttribute(
+      'aria-current',
+    )
+  })
+
+  it('keeps "Minhas salas" current on the joined rooms list', async () => {
+    renderShell(undefined, ['/rooms/joined'])
+
+    expect(await screen.findByText('tela participei')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /minhas salas/i })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+    expect(screen.getByRole('link', { name: /entrar com código/i })).not.toHaveAttribute(
       'aria-current',
     )
   })
