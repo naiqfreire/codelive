@@ -55,6 +55,10 @@ class JoinInfo(BaseModel):
     is_anonymous: bool
     nickname: str | None
     joined_at: datetime
+    access_code: str
+    language: Language
+    status: Literal["active", "closed"]
+    created_at: datetime
 
 
 class ListJoinedResponse(BaseModel):
