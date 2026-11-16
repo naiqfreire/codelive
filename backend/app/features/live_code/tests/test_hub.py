@@ -28,12 +28,12 @@ class _StubSocket:
         self.sent.append(frame)
 
 
-def _conn(role="viewer", socket=None):
+def _conn(role="viewer", socket=None, user_id=None):
     return Connection(
         websocket=socket or _StubSocket(),
         role=role,
-        user_id=None,
-        anonymous=True,
+        user_id=user_id,
+        anonymous=user_id is None,
         joined=True,
     )
 
@@ -118,3 +118,75 @@ async def test_send_failure_disconnects_and_removes():
     assert healthy.websocket.sent == [{"type": "presence"}]
     assert hub.count(room) == 1
     assert failing not in hub._rooms.get(room, {}).values()
+
+
+# --- VERS-07: exclude_user_id contract ------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_broadcast_excludes_every_socket_of_the_excluded_user():
+    """Both tabs of the excluded user stay silent; others still receive."""
+    room = uuid.uuid4()
+    owner_id = uuid.uuid4()
+    other_id = uuid.uuid4()
+    tab_one = _conn(role="owner", user_id=owner_id)
+    tab_two = _conn(role="owner", user_id=owner_id)
+    other = _conn(role="viewer", user_id=other_id)
+    anonymous = _conn()
+    for conn in (tab_one, tab_two, other, anonymous):
+        hub.add(room, conn)
+
+    await hub.broadcast(
+        room, lambda conn: {"type": "snapshot"}, exclude_user_id=owner_id
+    )
+
+    assert tab_one.websocket.sent == []
+    assert tab_two.websocket.sent == []
+    assert other.websocket.sent == [{"type": "snapshot"}]
+    assert anonymous.websocket.sent == [{"type": "snapshot"}]
+    assert hub.count(room) == 4
+
+
+@pytest.mark.asyncio
+async def test_broadcast_default_exclusion_sends_to_anonymous_connections():
+    """``None`` excludes nobody — the ``None == None`` trap guard (T-09-03)."""
+    room = uuid.uuid4()
+    anonymous = _conn()
+    hub.add(room, anonymous)
+
+    await hub.broadcast(room, lambda conn: {"type": "presence"})
+
+    assert anonymous.websocket.sent == [{"type": "presence"}]
+    assert hub.count(room) == 1
+
+
+@pytest.mark.asyncio
+async def test_excluded_socket_is_not_evicted_even_if_it_would_fail():
+    """The skip is before ``try:`` — an excluded socket never reaches ``failed``."""
+    room = uuid.uuid4()
+    owner_id = uuid.uuid4()
+    excluded = _conn(socket=_StubSocket(fail=True), user_id=owner_id)
+    healthy = _conn(user_id=uuid.uuid4())
+    hub.add(room, excluded)
+    hub.add(room, healthy)
+
+    await hub.broadcast(room, lambda conn: {"type": "presence"}, exclude_user_id=owner_id)
+
+    assert healthy.websocket.sent == [{"type": "presence"}]
+    assert excluded.websocket.sent == []
+    assert hub.count(room) == 2
+    assert excluded in hub._rooms.get(room, {}).values()
+
+
+@pytest.mark.asyncio
+async def test_excluded_only_room_is_a_silent_no_op():
+    """Zero recipients: no send, no exception, registry unchanged (D-04)."""
+    room = uuid.uuid4()
+    owner_id = uuid.uuid4()
+    owner_only = _conn(role="owner", user_id=owner_id)
+    hub.add(room, owner_only)
+
+    await hub.broadcast(room, lambda conn: {"type": "snapshot"}, exclude_user_id=owner_id)
+
+    assert owner_only.websocket.sent == []
+    assert hub.count(room) == 1
