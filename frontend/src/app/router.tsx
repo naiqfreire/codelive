@@ -10,6 +10,7 @@ import { RouteFallback } from './RouteFallback'
 const LoginRoute = lazy(() => import('./routes/LoginRoute'))
 const RegisterRoute = lazy(() => import('./routes/RegisterRoute'))
 const RoomListRoute = lazy(() => import('./routes/RoomListRoute'))
+const JoinedRoomsRoute = lazy(() => import('./routes/JoinedRoomsRoute'))
 const CodeEntryRoute = lazy(() => import('./routes/CodeEntryRoute'))
 const JoinRoomRoute = lazy(() => import('./routes/JoinRoomRoute'))
 
@@ -49,6 +50,7 @@ export const routes: RouteObject[] = [
         element: <AppShell />,
         children: [
           { index: true, element: withSuspense(<RoomListRoute />) },
+          { path: 'joined', element: withSuspense(<JoinedRoomsRoute />) },
           { path: 'join', element: withSuspense(<CodeEntryRoute />) },
           { path: ':roomId/join', element: withSuspense(<JoinRoomRoute />) },
           { path: ':roomId', element: withSuspense(<OwnerRoomPage />) },
