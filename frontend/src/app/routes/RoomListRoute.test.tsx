@@ -22,6 +22,7 @@ function createFakeRoomsApi(overrides: Partial<RoomsApi> = {}): RoomsApi {
 
   return {
     listMine: vi.fn(async () => rooms),
+    listJoined: vi.fn(async () => []),
     create: vi.fn(async (language) => {
       const created: RoomSummary = {
         ...room,

@@ -20,6 +20,7 @@ const room: RoomLookup = {
 function createFakeRoomsApi(overrides: Partial<RoomsApi> = {}): RoomsApi {
   return {
     listMine: async () => [],
+    listJoined: async () => [],
     create: async () => room,
     close: async () => room,
     regenerateCode: async () => room,
