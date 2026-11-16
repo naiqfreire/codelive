@@ -48,12 +48,18 @@ async def write_current_state(
     return result.scalar_one()
 
 
-async def broadcast_snapshot(room_id: uuid.UUID, content: str, language: str) -> None:
+async def broadcast_snapshot(
+    room_id: uuid.UUID,
+    content: str,
+    language: str,
+    exclude_user_id: uuid.UUID | None = None,
+) -> None:
     """Broadcast the existing ``snapshot`` frame to every joined socket.
 
     Session-free on purpose (D-06): the hub is process memory, and the frame
     is built per recipient from its own ``request_id``. Called only AFTER the
     restore's commit — a rolled-back write must never be promised on the wire.
+    ``exclude_user_id`` keeps the restoring owner silent (VERS-07).
     """
     content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
     await hub.broadcast(
@@ -61,4 +67,5 @@ async def broadcast_snapshot(room_id: uuid.UUID, content: str, language: str) ->
         lambda recipient: protocol.snapshot_frame(
             room_id, content, language, content_hash, recipient.request_id
         ),
+        exclude_user_id=exclude_user_id,
     )
