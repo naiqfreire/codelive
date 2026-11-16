@@ -412,8 +412,8 @@ def _patch_restore_seams(monkeypatch, owner_id):
     async def _owned(session, room_id):
         return (owner_id, "active", "python")
 
-    async def _record_broadcast(room_id, content, language):
-        broadcasts.append((room_id, content, language))
+    async def _record_broadcast(room_id, content, language, exclude_user_id):
+        broadcasts.append((room_id, content, language, exclude_user_id))
 
     monkeypatch.setattr(rooms_public, "get_room_owner_status_language", _owned)
     monkeypatch.setattr(live_code_public, "broadcast_snapshot", _record_broadcast)
@@ -441,7 +441,7 @@ async def test_restore_success_commits_once_and_broadcasts(monkeypatch, capsys):
     result = await service.restore_version(session, room_id, version_id, _User(owner_id))
 
     assert session.commit_calls == 1
-    assert broadcasts == [(room_id, content, "python")]
+    assert broadcasts == [(room_id, content, "python", owner_id)]
     assert result.content == content
     assert result.id == new_id
     assert result.content_hash == hashlib.sha256(content.encode("utf-8")).hexdigest()
