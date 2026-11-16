@@ -180,7 +180,7 @@ são apresentacionais e recebem `onSubmit`; a composição com a API vive em
 
 Rota `/rooms`, composta por `app/routes/RoomListRoute.tsx` (auth + API + cache) e
 `app/pages/RoomListPage.tsx` (apresentação). Lista apenas as salas do dono, mais recente primeiro,
-sem a aba "Participei" nesta entrega.
+com as abas da §6.12 no topo ("Criadas por mim" / "Participei").
 
 - **Card de sala** (`features/rooms/components/RoomCard.tsx`): código como título
   (`font-mono`, `tracking`, `select-all`), `StatusBadge` com texto ("Aberta"/"Encerrada"),
@@ -352,6 +352,41 @@ min-w-11`, ícone SVG `aria-hidden`). Motivo: `rooms` não tem coluna de nome �
   ao `ConnectionStatus` (§6.6), e dois elementos com o mesmo papel tornam a região ambígua para
   leitores de tela.
 
+### 6.12 Tela "Salas que participei" (#27)
+
+Rota `/rooms/joined`, composta por `app/routes/JoinedRoomsRoute.tsx` (auth + API + cache) e
+`app/pages/JoinedRoomsPage.tsx` (apresentação). Entrega o RF04: o usuário autenticado vê as salas em
+que entrou como **espectador**, com status e acesso rápido. Salas de outros usuários que ele não
+entrou nunca aparecem — o filtro é por `user_id` da sessão e `role = 'viewer'` no servidor (SPEC §8).
+
+- **Abas de filtro.** `RoomListTabs` (`features/rooms/components/RoomListTabs.tsx`) é uma
+  `nav aria-label="Filtro de salas"` com "Criadas por mim" (`/rooms`) e "Participei"
+  (`/rooms/joined`), `aria-current="page"` na aba ativa, `min-h-11` (44 px) e foco visível. Cada lista
+  tem URL própria: refresh, deep link e botão voltar preservam a escolha. O `AppShell` não ganha item
+  novo; "Minhas salas" continua `aria-current` nas duas rotas, e "Entrar com código" permanece
+  exclusivo de `/rooms/join`.
+- **Card** (`features/rooms/components/JoinedRoomCard.tsx`): código como título (`font-mono`,
+  `tracking`, `select-all`), `StatusBadge` textual ("Aberta"/"Encerrada"), linguagem, "entrou em
+  dd/mm/aaaa" e "Copiar" com o mesmo feedback de `RoomCard` (§6.7). Ações em ordem visual, alvos
+  ≥ 44 px e quebra de linha no mobile.
+- **Acesso rápido só em sala aberta.** O link "Assistir sala" leva a `/rooms/:roomId/view`
+  (somente leitura). Em sala encerrada o link não existe e o card mostra "Sala encerrada: não é
+  possível assistir. Peça um novo código ao dono." — o servidor também recusa entrada em sala
+  fechada, então a interface não promete o que o backend nega.
+- **Identidade sem nome de sala.** `rooms` não tem coluna de nome; o código de acesso é a identidade
+  (mesma decisão da §6.11). O código exibido é o **atual**: regenerar o código do dono atualiza a
+  lista após a invalidação do cache.
+- **Estados:** carregando (`role="status"` "Carregando salas…"), vazio (`EmptyState` "Você ainda não
+  entrou em nenhuma sala" + link "Entrar com código" → `/rooms/join`), erro sem dados (`role="alert"`
+  + "Tentar novamente" ou "Entrar novamente" em 401) e erro com cache (lista permanece + banner
+  `role="alert"` com retry). O header também oferece "Entrar com código".
+- **Contagem:** "X abertas · Y encerradas" com plural correto, sempre em texto (nunca só cor).
+- **Cache (SPEC §10):** `GET /api/rooms/joined` responde sob `rooms:joined:{user_id}` (TTL 30 s) e é
+  invalidado ao entrar na sala e, porque o item carrega status e código, ao encerrar e ao regenerar
+  (clear do cache de participações; a chave é por usuário e não há índice de membros). No frontend,
+  `useJoinedRooms` usa a chave `['rooms','joined',userId]`: entra na persistência de `queryClient.ts`,
+  só busca com sessão e é limpa ao sair ou trocar de usuário.
+- **Responsivo** em 375, 768, 1024 e 1440 px (grade de 1, 2 e 3 colunas, como em §6.7).
 ### 6.12 Histórico de versões da sala (#41)
 
 Painel do dono para consultar e restaurar versões (RF11). A fatia vive em `features/versions/`:

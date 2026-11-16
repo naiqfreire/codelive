@@ -32,6 +32,18 @@ def test_invalidate_rooms_joined_removes_only_target_key():
     assert cache.get_cached_rooms_joined("user-2") == [{"room_id": "2"}]
 
 
+def test_invalidate_rooms_joined_all_clears_every_joined_key_and_keeps_mine():
+    cache.set_cached_rooms_joined("user-1", [{"room_id": "1"}])
+    cache.set_cached_rooms_joined("user-2", [{"room_id": "2"}])
+    cache.set_cached_rooms_mine("user-1", [{"id": "1"}])
+
+    cache.invalidate_rooms_joined_all()
+
+    assert cache.get_cached_rooms_joined("user-1") is None
+    assert cache.get_cached_rooms_joined("user-2") is None
+    assert cache.get_cached_rooms_mine("user-1") == [{"id": "1"}]
+
+
 def test_clear_removes_joined_keys():
     cache.set_cached_rooms_joined("user-1", [{"room_id": "1"}])
     cache.clear_rooms_cache()

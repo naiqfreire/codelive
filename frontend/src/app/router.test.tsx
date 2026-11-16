@@ -13,12 +13,14 @@ const fetchMock = vi.fn()
 
 beforeEach(() => {
   fetchMock.mockReset()
-  fetchMock.mockResolvedValue(
-    new Response(JSON.stringify([]), {
+  fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+    const url = String(input)
+    const body = url.includes('/api/rooms/joined') ? { items: [] } : []
+    return new Response(JSON.stringify(body), {
       status: 200,
       headers: { 'content-type': 'application/json' },
-    }),
-  )
+    })
+  })
   vi.stubGlobal('fetch', fetchMock)
 })
 
@@ -82,6 +84,31 @@ describe('router', () => {
       'aria-current',
       'page',
     )
+  })
+
+  it('renders the joined rooms list inside the shell for an authenticated visitor', async () => {
+    renderRoute('/rooms/joined')
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: /salas que participei/i }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /minhas salas/i })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+    expect(screen.getByRole('link', { name: 'Participei' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+  })
+
+  it('sends an anonymous visitor away from the joined rooms list', async () => {
+    renderRoute('/rooms/joined', anonymousApi())
+
+    expect(await screen.findByRole('heading', { name: /entrar/i })).toBeInTheDocument()
+    expect(
+      screen.queryByRole('heading', { name: /salas que participei/i }),
+    ).not.toBeInTheDocument()
   })
 
   it('sends an authenticated visitor from the login page to the room list', async () => {

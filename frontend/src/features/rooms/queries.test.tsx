@@ -5,8 +5,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../../shared/http'
 import { QueryProvider } from '../../test/query'
 import type { RoomsApi } from './api'
-import { roomKeys, useCloseRoom, useCreateRoom, useMyRooms, useRegenerateRoomCode } from './queries'
-import type { RoomSummary } from './types'
+import { roomKeys, useCloseRoom, useCreateRoom, useJoinedRooms, useMyRooms, useRegenerateRoomCode } from './queries'
+import type { JoinedRoom, RoomSummary } from './types'
 
 const roomA: RoomSummary = {
   id: '11111111-1111-1111-1111-111111111111',
@@ -31,6 +31,11 @@ const createdRoom: RoomSummary = {
   language: 'java',
 }
 
+const joinedRoom: JoinedRoom = {
+  ...roomB,
+  joinedAt: '2026-11-11T10:00:00Z',
+}
+
 function createFakeRoomsApi(overrides: Partial<RoomsApi> = {}): RoomsApi {
   return {
     listMine: vi.fn(async () => [roomA, roomB]),
@@ -42,6 +47,7 @@ function createFakeRoomsApi(overrides: Partial<RoomsApi> = {}): RoomsApi {
       ownerId: 'owner-1',
       updatedAt: roomA.createdAt,
     })),
+    listJoined: vi.fn(async () => [joinedRoom]),
     ...overrides,
   }
 }
@@ -56,6 +62,31 @@ function setup(queryClient = new QueryClient()) {
 describe('room queries', () => {
   it('builds a per-user query key', () => {
     expect(roomKeys.mine('user-1')).toEqual(['rooms', 'mine', 'user-1'])
+  })
+
+  it('builds a per-user joined key', () => {
+    expect(roomKeys.joined('user-1')).toEqual(['rooms', 'joined', 'user-1'])
+  })
+
+  it('loads the joined rooms', async () => {
+    const api = createFakeRoomsApi()
+    const { wrapper } = setup()
+
+    const { result } = renderHook(() => useJoinedRooms('user-1', api), { wrapper })
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(result.current.data).toEqual([joinedRoom])
+    expect(api.listJoined).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not fetch joined rooms without an authenticated user', async () => {
+    const api = createFakeRoomsApi()
+    const { wrapper } = setup()
+
+    const { result } = renderHook(() => useJoinedRooms(undefined, api), { wrapper })
+
+    await waitFor(() => expect(result.current.fetchStatus).toBe('idle'))
+    expect(api.listJoined).not.toHaveBeenCalled()
   })
 
   it('loads the owner rooms', async () => {

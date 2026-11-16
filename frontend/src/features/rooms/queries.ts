@@ -14,6 +14,7 @@ import type { RoomSummary } from './types'
 export const roomKeys = {
   all: ['rooms'] as const,
   mine: (userId: string) => ['rooms', 'mine', userId] as const,
+  joined: (userId: string) => ['rooms', 'joined', userId] as const,
 }
 
 function replaceRoom(rooms: RoomSummary[] | undefined, updated: RoomSummary) {
@@ -25,6 +26,19 @@ export function useMyRooms(userId: string | null | undefined, api: RoomsApi = ro
   return useQuery({
     queryKey: roomKeys.mine(userId ?? 'anonymous'),
     queryFn: () => api.listMine(),
+    enabled: Boolean(userId),
+  })
+}
+
+/**
+ * Rooms the user entered as a spectator. The key includes the user id for the
+ * same reason as `useMyRooms`: a persisted cache must never leak another
+ * account's rooms. Registered under `['rooms']`, so it is persisted too.
+ */
+export function useJoinedRooms(userId: string | null | undefined, api: RoomsApi = roomsApi) {
+  return useQuery({
+    queryKey: roomKeys.joined(userId ?? 'anonymous'),
+    queryFn: () => api.listJoined(),
     enabled: Boolean(userId),
   })
 }

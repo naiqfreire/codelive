@@ -18,6 +18,19 @@ const wireLookup = {
   updated_at: '2026-11-10T10:00:00Z',
 }
 
+const wireJoined = {
+  room_id: wireRoom.id,
+  user_id: '33333333-3333-3333-3333-333333333333',
+  role: 'viewer',
+  is_anonymous: false,
+  nickname: 'Espectador',
+  joined_at: '2026-11-11T10:00:00Z',
+  access_code: wireRoom.access_code,
+  language: wireRoom.language,
+  status: wireRoom.status,
+  created_at: wireRoom.created_at,
+}
+
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -99,6 +112,38 @@ describe('roomsApi', () => {
       expect.objectContaining({ method: 'POST', credentials: 'include' }),
     )
     expect(room.accessCode).toBe('B4T9RS')
+  })
+
+  it('lists the joined rooms and maps the wire payload', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ items: [wireJoined] }))
+
+    const rooms = await roomsApi.listJoined()
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/rooms/joined',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    )
+    expect(rooms).toEqual([
+      {
+        id: wireRoom.id,
+        accessCode: 'K7M2QX',
+        language: 'python',
+        status: 'active',
+        createdAt: '2026-11-09T17:30:00Z',
+        joinedAt: '2026-11-11T10:00:00Z',
+      },
+    ])
+    expect(rooms[0]).not.toHaveProperty('joined_at')
+    expect(rooms[0]).not.toHaveProperty('room_id')
+  })
+
+  it('propagates joined list errors', async () => {
+    fetchMock.mockImplementation(async () => errorResponse('not_authenticated', 401))
+
+    await expect(roomsApi.listJoined()).rejects.toMatchObject({
+      code: 'not_authenticated',
+      status: 401,
+    })
   })
 
   it('looks up a room by access code and maps the wire payload', async () => {

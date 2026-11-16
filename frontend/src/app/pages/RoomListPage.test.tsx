@@ -73,14 +73,21 @@ describe('RoomListPage', () => {
     expect(await screen.findAllByRole('heading', { level: 2 })).toHaveLength(3)
   })
 
-  it('titles the page "Minhas salas" without the joined tab', async () => {
+  it('offers the room filters and marks the owned rooms tab', async () => {
     renderPage()
 
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Minhas salas' }),
     ).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: /participei/i })).not.toBeInTheDocument()
-    expect(screen.queryByRole('navigation', { name: /filtro de salas/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('navigation', { name: 'Filtro de salas' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Participei' })).toHaveAttribute(
+      'href',
+      '/rooms/joined',
+    )
+    expect(screen.getByRole('link', { name: 'Criadas por mim' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
   })
 
   it('summarizes the open and closed counts', async () => {

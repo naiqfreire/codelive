@@ -50,6 +50,17 @@ def invalidate_rooms_joined(user_id: str) -> None:
     _rooms_joined_cache.pop(_joined_key(user_id), None)
 
 
+def invalidate_rooms_joined_all() -> None:
+    """Drop every ``rooms:joined`` entry.
+
+    Room identity (access code, status, language) is part of the joined payload
+    and the key is per user, so an owner action that changes a room cannot reach
+    each spectator's key. Clearing the whole joined cache is O(entries) on a
+    256-item TTLCache and keeps the next read correct.
+    """
+    _rooms_joined_cache.clear()
+
+
 def clear_rooms_cache() -> None:
     _rooms_mine_cache.clear()
     _rooms_joined_cache.clear()

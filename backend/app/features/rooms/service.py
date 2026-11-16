@@ -99,6 +99,7 @@ async def close_room(session: AsyncSession, room_id, user) -> Room:
         room.status = "closed"
         await session.commit()
     cache.invalidate_rooms_mine(str(user.id))
+    cache.invalidate_rooms_joined_all()
     return room
 
 
@@ -122,6 +123,7 @@ async def regenerate_room_code(session: AsyncSession, room_id, user) -> Room:
             raise
         await session.commit()
         cache.invalidate_rooms_mine(str(user.id))
+        cache.invalidate_rooms_joined_all()
         return room
     log.error("access_code_exhausted", attempts=MAX_CODE_ATTEMPTS)
     raise HTTPException(status_code=500, detail=ErrorCode.INTERNAL_ERROR)
@@ -224,10 +226,18 @@ async def join_room(
 
 
 async def list_rooms_joined(session: AsyncSession, user) -> ListJoinedResponse:
-    """List every viewer membership the user holds, newest first.
+    """List every viewer membership the user holds, newest first (RF04).
 
-    Cached under ``rooms:joined:{user_id}`` (SPEC §10, TTL 30s); invalidated
-    on room creation and on join. The live code path never goes through it.
+    Each item carries the room's *current* identity — access code, language,
+    status and creation date — so the screen can show status and a quick access
+    link without a second request. Owner memberships are excluded: the owner
+    list is ``GET /api/rooms/mine``. A user only ever reads rows whose
+    ``user_id`` is their own, and anonymous memberships (``user_id`` NULL) can
+    never reach an authenticated list.
+
+    Cached under ``rooms:joined:{user_id}`` (SPEC §10, TTL 30s); invalidated on
+    join and, because the payload carries room identity, on close and code
+    regeneration for every spectator.
     """
     user_key = str(user.id)
     cached = cache.get_cached_rooms_joined(user_key)
@@ -235,6 +245,17 @@ async def list_rooms_joined(session: AsyncSession, user) -> ListJoinedResponse:
         return ListJoinedResponse(items=[JoinInfo(**item) for item in cached])
     memberships = await membership.list_memberships_for_user(session, user.id)
     memberships = [m for m in memberships if m.role == "viewer"]
+
+    rooms_by_id: dict[uuid.UUID, Room] = {}
+    if memberships:
+        room_ids = [m.room_id for m in memberships]
+        rows = (
+            (await session.execute(select(Room).where(Room.id.in_(room_ids))))
+            .scalars()
+            .all()
+        )
+        rooms_by_id = {room.id: room for room in rows}
+
     payload = [
         JoinInfo(
             room_id=m.room_id,
@@ -243,8 +264,13 @@ async def list_rooms_joined(session: AsyncSession, user) -> ListJoinedResponse:
             is_anonymous=bool(m.is_anonymous),
             nickname=m.nickname,
             joined_at=m.joined_at,
+            access_code=rooms_by_id[m.room_id].access_code,
+            language=rooms_by_id[m.room_id].language,
+            status=rooms_by_id[m.room_id].status,
+            created_at=rooms_by_id[m.room_id].created_at,
         )
         for m in memberships
+        if m.room_id in rooms_by_id
     ]
     cache.set_cached_rooms_joined(user_key, [item.model_dump(mode="json") for item in payload])
     return ListJoinedResponse(items=payload)

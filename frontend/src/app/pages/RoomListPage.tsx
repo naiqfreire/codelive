@@ -4,6 +4,7 @@ import {
   ConfirmDialog,
   CreateRoomDialog,
   RoomCard,
+  RoomListTabs,
   roomsErrorMessage,
 } from '../../features/rooms'
 import type { RoomLanguage, RoomSummary } from '../../features/rooms'
@@ -130,6 +131,8 @@ export default function RoomListPage({
 
   return (
     <section aria-labelledby="room-list-heading">
+      <RoomListTabs />
+
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1
