@@ -14,6 +14,15 @@ export type RoomSummary = {
 export type RoomDetail = RoomSummary & { code: string }
 
 /**
+ * Room the authenticated user entered as a spectator (RF04), from
+ * `GET /api/rooms/joined`. Carries the room's current identity plus the date
+ * the membership was created.
+ */
+export type JoinedRoom = RoomSummary & {
+  joinedAt: string
+}
+
+/**
  * Room resolved from an access code (`GET /api/rooms/by-code/{codigo}`).
  * It carries metadata for the identification step, not the live code content.
  */
