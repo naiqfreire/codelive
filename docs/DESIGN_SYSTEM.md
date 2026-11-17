@@ -109,10 +109,12 @@ são apresentacionais e recebem `onSubmit`; a composição com a API vive em
 - **Sessão:** o token é um cookie `httpOnly`, `Secure`, `SameSite=Lax` definido pelo backend. O
   front nunca o lê nem o guarda; `GET /api/auth/me` alimenta o `AuthProvider`, então recarregar a
   página ou abrir outra aba mantém o estado. Nunca usar `localStorage`.
-- **Rotas:** `ProtectedRoute` bloqueia `/rooms/*` e envia para `/login` guardando o destino em
-  `location.state.from` (apenas caminho interno). `GuestRoute` manda usuário autenticado para
-  `/rooms`. Enquanto a sessão é desconhecida, as rotas mostram `role="status"` ("Carregando…") e
-  nunca renderizam conteúdo privado.
+- **Rotas:** `ProtectedRoute` bloqueia `/rooms`, `/rooms/joined` e `/rooms/:roomId` e envia para
+  `/login` guardando o destino em `location.state.from` (apenas caminho interno). As três rotas
+  públicas do espectador — `/rooms/join`, `/rooms/:roomId/join` e `/rooms/:roomId/view` — ficam fora
+  do guarda e são envolvidas pelo `AppShell`, que esconde "Minhas salas", a saudação e "Sair" do
+  visitante sem conta. `GuestRoute` manda usuário autenticado para `/rooms`. Enquanto a sessão é
+  desconhecida, as rotas mostram `role="status"` ("Carregando…") e nunca renderizam conteúdo privado.
 - **Falha de sessão:** erro que não é 401 (rede, 5xx) vira estado `error` com `role="alert"` e botão
   "Tentar novamente" — não derruba o usuário para o login.
 - **Validação:** espelha o backend (nome ≤ 120, senha entre 8 e 128, e-mail com formato válido).
@@ -264,24 +266,30 @@ espectador (RNF03). Compõe o `Modal` da §6.8 e o `TextField` de `shared/`.
   valor fica válido. Não existe mínimo inventado — o backend aceita 1 caractere.
 - **Erro:** junto ao campo, via `TextField` (`role="alert"`, `aria-invalid`, `aria-describedby`).
   Texto sempre presente, nunca só cor.
-- **Duas ações:** "Entrar na sala" (primário, `type="submit"`) e "Entrar sem conta" (secundário).
-  As duas validam o nickname; a diferença é apenas a flag `anonymous` enviada.
-- **Envio em andamento:** `isSubmitting` desabilita o campo e as duas ações.
-- **Contrato:** o modal chama `onJoin({ nickname, anonymous })` e não navega nem chama a API — a
-  página decide o destino. Quando `accessCode` é informado, o código aparece na descrição.
+- **Uma única ação, escolhida pela sessão.** O modal recebe `anonymousEntry`: visitante sem conta vê
+  "Entrar sem conta"; visitante autenticado vê "Entrar na sala". Nunca ofereça "Entrar sem conta" a
+  quem tem sessão válida — o backend prioriza a identidade autenticada no WebSocket, então a escolha
+  criaria uma membership que o canal não usaria.
+- **Envio em andamento:** `isSubmitting` desabilita o campo e a ação, com rótulo "Entrando…".
+- **Contrato:** o modal chama `onJoin({ nickname, anonymous })` e não navega nem chama a API — a rota
+  decide a identidade a partir da sessão e envia `POST /join`. Quando `accessCode` é informado, o
+  código aparece na descrição. Falhas do servidor chegam por `error` e continuam visíveis dentro do
+  modal aberto.
 - **Revisão visual:** a página `/rooms/join` existe apenas em `import.meta.env.DEV`; a rota real
   de entrada por código é descrita na §6.10.
 
 ### 6.10 Entrada por código e identificação (#25)
 
-Fluxo do espectador (RNF03), passos 2 e 3, para visitantes autenticados: `CodeEntryPage` em
+Fluxo do espectador (RNF03), passos 2 e 3, para visitantes com ou sem conta: `CodeEntryPage` em
 `app/pages/CodeEntryPage.tsx` e `IdentificationPage` em `app/pages/IdentificationPage.tsx`,
 compostas por `CodeEntryRoute` e `JoinRoomRoute` em `app/routes/`.
 
-- **Rotas:** `/rooms/join` para o código e `/rooms/:roomId/join` para a identificação, ambas dentro
-  de `ProtectedRoute`/`AppShell`. A navegação principal marca "Entrar com código" com
-  `aria-current="page"` em qualquer rota terminada em `/join`; "Minhas salas" deixa de ser a seção
-  atual nesse caso.
+- **Rotas:** `/rooms/join` para o código, `/rooms/:roomId/join` para a identificação e
+  `/rooms/:roomId/view` para a sala ao vivo. As três são **públicas** (fora do `ProtectedRoute`) e
+  vivem dentro do `AppShell`, que se adapta: visitante sem conta vê "Entrar com código" e "Entrar"
+  (link para `/login`), sem "Minhas salas", saudação ou "Sair". A navegação principal marca "Entrar
+  com código" com `aria-current="page"` em qualquer rota terminada em `/join`; "Minhas salas" deixa
+  de ser a seção atual nesse caso.
 - **Passo visível:** "Passo 2 de 4" no código e "Passo 3 de 4" na identificação, em
   `text-xs font-medium tracking-[0.2em] text-accent uppercase`, seguidos de `h1` em `font-mono
 text-3xl font-semibold tracking-tight` com `tabIndex={-1}` para receber foco programático.
@@ -292,19 +300,24 @@ text-3xl font-semibold tracking-tight` com `tabIndex={-1}` para receber foco pro
 - **Validação local antes da API:** vazio → "Informe o código de acesso."; incompleto → "O código de
   acesso tem 6 caracteres.". O erro fica no campo (`aria-invalid`, `aria-describedby`) e o foco
   volta para ele — depois que o campo deixa de estar `disabled`, não durante o envio.
-- **Validação remota:** `GET /api/rooms/by-code/{codigo}` via `roomsApi.getByCode`, sem cache. Código
-  inexistente (`room_not_found`) vira erro de campo e preserva o valor digitado. Falha de rede,
-  sessão expirada e erro desconhecido usam `role="alert"` acima do botão; a sessão expirada
-  oferece "Entrar novamente", que encerra a sessão e leva ao login.
+- **Validação remota:** `GET /api/rooms/by-code/{codigo}` via `roomsApi.getByCode`, sem cache e sem
+  exigir sessão (SPEC §8). Código inexistente (`room_not_found`) vira erro de campo e preserva o
+  valor digitado. Falha de rede e erro desconhecido usam `role="alert"` acima do botão. O tratamento
+  de `not_authenticated` ("Entrar novamente") permanece defensivo, caso uma autorização futura volte
+  a exigir sessão na consulta; hoje o endpoint é público.
 - **Estado de envio:** o botão alterna para "Verificando…", recebe `aria-busy="true"` e desabilita
   campo e ação; o foco é aplicado quando o envio termina.
 - **Sala encerrada:** resposta `status: "closed"` bloqueia o avanço com
   "Esta sala já foi encerrada. Peça um novo código ao dono." e não navega.
 - **Privacidade:** o código nunca aparece em log de falha. `apiRequest` recebe
   `logPath: '/api/rooms/by-code/{codigo}'`, então o path registrado é o modelo, não o valor.
-- **Identificação é um shell nesta entrega:** reusa `JoinRoomModal` (§6.9) e apenas registra a
-  escolha em um `role="status"`; o `POST /join` pertence à tarefa de entrada. Fechar o modal volta
-  para `/rooms/join` com o código preservado em `location.state`.
+- **Identificação envia o `POST /join`:** a rota deriva a identidade de `useAuth`
+  (`anonymous: false` para autenticado, `anonymous: true` para visitante sem conta) e envia
+  `{ code, anonymous, nickname }`. Enquanto a sessão está `loading`, mostra "Verificando sua
+  sessão…"; se o `me` falhar, mostra erro com "Tentar novamente" em vez de adivinhar a identidade.
+  Sucesso navega para `/rooms/:roomId/view` com `state.room` e invalida `['rooms', 'joined']`.
+  Falhas mantêm o modal aberto com a mensagem mapeada (`room_closed`, `room_not_found`, rede).
+- **Fechar o modal** volta para `/rooms/join` com o código preservado em `location.state`.
 - **Guarda de URL direta:** sem `location.state.room`, com `id` diferente de `:roomId` ou com sala
   encerrada, a página mostra "Código necessário" (ou "Sala encerrada") e um link para informar outro
   código — nunca renderiza o modal sem a validação do passo anterior.
@@ -447,11 +460,14 @@ ainda não enviada (RNF02/RNF04). O canal vive em `features/live_code/useRoomCon
 `keepLocalVersion`. A página só renderiza e encaminha essas ações.
 
 - **Recuperação na abertura.** O backend já envia um `snapshot` em todo join/reconexão; nenhuma
-  chamada extra é feita. A rota resolve a sala por `GET /api/rooms/mine` (dono) ou
-  `GET /api/rooms/joined` (espectador), então um reload ou link direto funciona sem estado em
-  memória. Enquanto a consulta não assenta, a rota mostra "Carregando sala…" (`role="status"`);
-  erro mostra `role="alert"` com "Tentar novamente"; sala fora da lista mostra o estado de não
-  encontrada da própria página.
+  chamada extra é feita. A rota resolve a sala por `GET /api/rooms/mine` (dono),
+  `GET /api/rooms/joined` (espectador com conta) ou pelo `location.state.room` guardado na entrada
+  (espectador sem conta), então um reload na mesma aba funciona sem pedir o código de novo. Enquanto
+  a consulta não assenta, a rota mostra "Carregando sala…" (`role="status"`); erro mostra
+  `role="alert"` com "Tentar novamente"; sala fora da lista mostra o estado de não encontrada da
+  própria página. Espectador sem conta que abre o endereço em outra aba (sem estado) vê "Sala não
+  encontrada" com o link "Informar o código da sala" — o estado é dica de renderização, nunca
+  autorização: o servidor valida o canal.
 - **Editor do dono travado até o primeiro snapshot.** Antes do `snapshot` o editor é somente
   leitura e explica "Carregando código da sala…". Isso evita que um documento vazio sobrescreva o
   código persistido. Depois do primeiro snapshot ele fica editável mesmo desconectado.
