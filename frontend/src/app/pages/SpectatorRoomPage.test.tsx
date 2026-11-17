@@ -22,6 +22,10 @@ const connected: RoomConnectionState = {
   participantCount: 2,
   role: 'viewer',
   lastError: null,
+  hasSnapshot: true,
+  isOversize: false,
+  conflict: null,
+  syncNotice: null,
 }
 
 const PARTICIPANTS: Participant[] = [

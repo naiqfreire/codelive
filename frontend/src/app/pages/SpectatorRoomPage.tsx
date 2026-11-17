@@ -2,11 +2,11 @@ import { EmptyState } from '../../shared/components'
 import { CodeEditor, ConnectionStatus, useRoomConnection } from '../../features/live_code'
 import type { RoomConnectionState } from '../../features/live_code'
 import type { Participant } from '../../features/membership'
-import type { RoomDetail } from '../../features/rooms'
+import type { RoomSummary } from '../../features/rooms'
 import { RoomLayout } from '../layouts/RoomLayout'
 
 type SpectatorRoomPageProps = {
-  room?: RoomDetail
+  room?: RoomSummary
   /** Overrides the live hook (tests and future join flow). */
   connection?: RoomConnectionState
   /**
@@ -24,10 +24,9 @@ export default function SpectatorRoomPage({
   participants,
 }: SpectatorRoomPageProps) {
   // The hook is always called (rules of hooks); it stays idle when the caller
-  // already provides a connection state.
-  const liveState = useRoomConnection(connection ? null : (room?.id ?? null), {
-    initialCode: room?.code ?? '',
-  })
+  // already provides a connection state. The room summary carries no code:
+  // the first frame of the channel is the source of the snapshot.
+  const liveState = useRoomConnection(connection ? null : (room?.id ?? null))
   const live = connection ?? liveState
 
   if (!room) {
