@@ -10,6 +10,10 @@ import { Modal } from './Modal'
 type JoinRoomModalProps = {
   accessCode?: string
   isSubmitting?: boolean
+  /** True when the visitor has no account and the API must be called as anonymous. */
+  anonymousEntry?: boolean
+  /** Server-side failure to keep visible while the modal stays open. */
+  error?: string | null
   onJoin: (choice: JoinChoice) => void
   onClose: () => void
 }
@@ -20,32 +24,35 @@ type JoinRoomModalProps = {
  * The nickname is required even for the anonymous entry: `anonymous` means
  * "no account", not "no name" — the backend rejects an anonymous join without
  * a nickname (422) because presence needs a name to identify who is in the
- * room. This component only reports the choice; the page owns the request.
+ * room. The route owns the request and decides the identity from the session;
+ * this component only reports the choice.
  */
 export function JoinRoomModal({
   accessCode,
   isSubmitting = false,
+  anonymousEntry = false,
+  error = null,
   onJoin,
   onClose,
 }: JoinRoomModalProps) {
   const [nickname, setNickname] = useState('')
-  const [error, setError] = useState<string | null>(null)
+  const [fieldError, setFieldError] = useState<string | null>(null)
 
-  function submit(anonymous: boolean) {
+  function submit() {
     const result = validateNickname(nickname)
 
     if (!result.ok) {
-      setError(result.error)
+      setFieldError(result.error)
       return
     }
 
-    setError(null)
-    onJoin({ nickname: result.value, anonymous })
+    setFieldError(null)
+    onJoin({ nickname: result.value, anonymous: anonymousEntry })
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    submit(false)
+    submit()
   }
 
   function handleNicknameChange(value: string) {
@@ -53,9 +60,9 @@ export function JoinRoomModal({
 
     // Only revalidate once the field has already failed, so the error does not
     // appear while the user is still typing the first character.
-    if (error) {
+    if (fieldError) {
       const result = validateNickname(value)
-      setError(result.ok ? null : result.error)
+      setFieldError(result.ok ? null : result.error)
     }
   }
 
@@ -73,7 +80,7 @@ export function JoinRoomModal({
         <TextField
           label="Nickname"
           hint={`Até ${NICKNAME_MAX_LENGTH} caracteres.`}
-          error={error ?? undefined}
+          error={fieldError ?? undefined}
           value={nickname}
           onChange={(event) => handleNicknameChange(event.target.value)}
           disabled={isSubmitting}
@@ -81,17 +88,18 @@ export function JoinRoomModal({
           placeholder="Como você quer ser chamado"
         />
 
-        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => submit(true)}
-            disabled={isSubmitting}
+        {error ? (
+          <p
+            role="alert"
+            className="rounded-lg border border-destructive/60 bg-muted px-4 py-3 text-sm text-foreground"
           >
-            Entrar sem conta
-          </Button>
+            {error}
+          </p>
+        ) : null}
+
+        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
           <Button type="submit" disabled={isSubmitting}>
-            Entrar na sala
+            {isSubmitting ? 'Entrando…' : anonymousEntry ? 'Entrar sem conta' : 'Entrar na sala'}
           </Button>
         </div>
       </form>

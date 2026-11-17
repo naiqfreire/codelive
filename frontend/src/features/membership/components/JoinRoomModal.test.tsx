@@ -5,15 +5,26 @@ import { JoinRoomModal } from './JoinRoomModal'
 type Props = {
   accessCode?: string
   isSubmitting?: boolean
+  anonymousEntry?: boolean
+  error?: string | null
   onJoin?: (choice: { nickname: string; anonymous: boolean }) => void
   onClose?: () => void
 }
 
-function renderModal({ accessCode, isSubmitting, onJoin, onClose }: Props = {}) {
+function renderModal({
+  accessCode,
+  isSubmitting,
+  anonymousEntry,
+  error,
+  onJoin,
+  onClose,
+}: Props = {}) {
   return render(
     <JoinRoomModal
       accessCode={accessCode}
       isSubmitting={isSubmitting}
+      anonymousEntry={anonymousEntry}
+      error={error}
       onJoin={onJoin ?? (() => {})}
       onClose={onClose ?? (() => {})}
     />,
@@ -21,14 +32,21 @@ function renderModal({ accessCode, isSubmitting, onJoin, onClose }: Props = {}) 
 }
 
 describe('JoinRoomModal', () => {
-  it('shows the nickname field and both entry actions', () => {
+  it('shows the nickname field and the account action by default', () => {
     renderModal()
 
     expect(screen.getByRole('dialog', { name: /entrar na sala/i })).toBeInTheDocument()
     expect(screen.getByLabelText(/nickname/i)).toBeInTheDocument()
     expect(screen.getByText(/até 60 caracteres/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /^entrar na sala$/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /entrar sem conta/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /entrar sem conta/i })).not.toBeInTheDocument()
+  })
+
+  it('shows the anonymous action when the visitor has no account', () => {
+    renderModal({ anonymousEntry: true })
+
+    expect(screen.getByRole('button', { name: /^entrar sem conta$/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^entrar na sala$/i })).not.toBeInTheDocument()
   })
 
   it('shows the room code when it is provided', () => {
@@ -65,7 +83,7 @@ describe('JoinRoomModal', () => {
     expect(onJoin).not.toHaveBeenCalled()
   })
 
-  it('sends the trimmed nickname from the primary action', () => {
+  it('sends the trimmed nickname with the account identity', () => {
     const onJoin = vi.fn()
     renderModal({ onJoin })
 
@@ -75,27 +93,27 @@ describe('JoinRoomModal', () => {
     expect(onJoin).toHaveBeenCalledWith({ nickname: 'Ana', anonymous: false })
   })
 
-  it('sends the anonymous flag from the secondary action', () => {
+  it('sends the anonymous flag when the visitor has no account', () => {
     const onJoin = vi.fn()
-    renderModal({ onJoin })
+    renderModal({ anonymousEntry: true, onJoin })
 
     fireEvent.change(screen.getByLabelText(/nickname/i), { target: { value: 'Ana' } })
-    fireEvent.click(screen.getByRole('button', { name: /entrar sem conta/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^entrar sem conta$/i }))
 
     expect(onJoin).toHaveBeenCalledWith({ nickname: 'Ana', anonymous: true })
   })
 
   it('requires the nickname even for the anonymous entry', () => {
     const onJoin = vi.fn()
-    renderModal({ onJoin })
+    renderModal({ anonymousEntry: true, onJoin })
 
-    fireEvent.click(screen.getByRole('button', { name: /entrar sem conta/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^entrar sem conta$/i }))
 
     expect(screen.getByRole('alert')).toHaveTextContent(/informe um nickname/i)
     expect(onJoin).not.toHaveBeenCalled()
   })
 
-  it('clears the error while the user types', () => {
+  it('clears the field error while the user types', () => {
     renderModal()
 
     fireEvent.click(screen.getByRole('button', { name: /^entrar na sala$/i }))
@@ -104,6 +122,13 @@ describe('JoinRoomModal', () => {
     fireEvent.change(screen.getByLabelText(/nickname/i), { target: { value: 'Ana' } })
 
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('shows a server error without closing the modal', () => {
+    renderModal({ error: 'Não foi possível entrar na sala. Tente novamente.' })
+
+    expect(screen.getByText(/não foi possível entrar na sala/i)).toBeInTheDocument()
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
   })
 
   it('closes without joining from the close button', () => {
@@ -117,11 +142,10 @@ describe('JoinRoomModal', () => {
     expect(onJoin).not.toHaveBeenCalled()
   })
 
-  it('disables the field and the actions while submitting', () => {
+  it('disables the field and the action while submitting', () => {
     renderModal({ isSubmitting: true })
 
     expect(screen.getByLabelText(/nickname/i)).toBeDisabled()
-    expect(screen.getByRole('button', { name: /^entrar na sala$/i })).toBeDisabled()
-    expect(screen.getByRole('button', { name: /entrar sem conta/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /entrando/i })).toBeDisabled()
   })
 })
