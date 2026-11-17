@@ -132,17 +132,17 @@ describe('router', () => {
     )
   })
 
-  it('sends an anonymous visitor away from the access-code step', async () => {
+  it('renders the access-code step for an anonymous visitor', async () => {
     renderRoute('/rooms/join', anonymousApi())
 
-    expect(await screen.findByRole('heading', { name: /entrar/i })).toBeInTheDocument()
     expect(
-      screen.queryByRole('heading', { name: /entrar com código/i }),
-    ).not.toBeInTheDocument()
+      await screen.findByRole('heading', { level: 1, name: /entrar com código/i }),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /minhas salas/i })).not.toBeInTheDocument()
   })
 
   it('guards the identification step when it is opened directly', async () => {
-    renderRoute(`/rooms/${SAMPLE_ROOMS[0].id}/join`)
+    renderRoute(`/rooms/${SAMPLE_ROOMS[0].id}/join`, anonymousApi())
 
     expect(await screen.findByRole('heading', { name: /código necessário/i })).toBeInTheDocument()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
@@ -158,6 +158,16 @@ describe('router', () => {
     renderRoute(`/rooms/${SAMPLE_ROOMS[0].id}/view`)
 
     expect(await screen.findByRole('heading', { name: /sala ao vivo/i })).toBeInTheDocument()
+
+    const editor = await screen.findByRole('textbox', { name: /código da sala/i })
+    expect(editor).toHaveAttribute('contenteditable', 'false')
+  })
+
+  it('renders a read-only spectator room for an anonymous visitor', async () => {
+    renderRoute(`/rooms/${SAMPLE_ROOMS[0].id}/view`, anonymousApi())
+
+    expect(await screen.findByRole('heading', { name: /sala ao vivo/i })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /minhas salas/i })).not.toBeInTheDocument()
 
     const editor = await screen.findByRole('textbox', { name: /código da sala/i })
     expect(editor).toHaveAttribute('contenteditable', 'false')

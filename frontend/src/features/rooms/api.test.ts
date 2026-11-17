@@ -179,6 +179,49 @@ describe('roomsApi', () => {
     )
   })
 
+  it('joins a room anonymously with the nickname and code', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(wireRoom))
+
+    const room = await roomsApi.join(wireRoom.id, {
+      code: 'K7M2QX',
+      anonymous: true,
+      nickname: 'Ana',
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/rooms/${wireRoom.id}/join`,
+      expect.objectContaining({
+        method: 'POST',
+        credentials: 'include',
+        body: JSON.stringify({ code: 'K7M2QX', anonymous: true, nickname: 'Ana' }),
+      }),
+    )
+    expect(room).toEqual({
+      id: wireRoom.id,
+      accessCode: 'K7M2QX',
+      language: 'python',
+      status: 'active',
+      createdAt: '2026-11-09T17:30:00Z',
+    })
+  })
+
+  it('joins a room with the authenticated identity', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(wireRoom))
+
+    await roomsApi.join(wireRoom.id, {
+      code: 'K7M2QX',
+      anonymous: false,
+      nickname: 'Ana',
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/rooms/${wireRoom.id}/join`,
+      expect.objectContaining({
+        body: JSON.stringify({ code: 'K7M2QX', anonymous: false, nickname: 'Ana' }),
+      }),
+    )
+  })
+
   it('propagates a missing code as an ApiError', async () => {
     fetchMock.mockImplementation(async () => errorResponse('room_not_found', 404))
 

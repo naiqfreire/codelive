@@ -50,6 +50,7 @@ function createFakeRoomsApi(overrides: Partial<RoomsApi> = {}): RoomsApi {
       ownerId: TEST_USER.id,
       updatedAt: room.createdAt,
     })),
+    join: vi.fn(async () => room),
     ...overrides,
   }
 }

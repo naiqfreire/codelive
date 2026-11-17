@@ -7,9 +7,10 @@ export { LanguageSelector } from './components/LanguageSelector'
 export { RoomCard } from './components/RoomCard'
 export { RoomListTabs } from './components/RoomListTabs'
 export { formatRoomDate } from './format'
+export { isRoomSummary } from './types'
 export type { JoinedRoom, RoomDetail, RoomLookup, RoomStatus, RoomSummary } from './types'
 export { roomsApi } from './api'
-export type { RoomsApi } from './api'
+export type { JoinRoomPayload, RoomsApi } from './api'
 export {
   roomKeys,
   useCloseRoom,

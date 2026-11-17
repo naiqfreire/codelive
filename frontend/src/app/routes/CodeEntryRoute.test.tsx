@@ -25,6 +25,7 @@ function createFakeRoomsApi(overrides: Partial<RoomsApi> = {}): RoomsApi {
     close: async () => room,
     regenerateCode: async () => room,
     getByCode: vi.fn(async () => room),
+    join: vi.fn(async () => room),
     ...overrides,
   }
 }

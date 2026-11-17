@@ -48,6 +48,7 @@ function createFakeRoomsApi(overrides: Partial<RoomsApi> = {}): RoomsApi {
       updatedAt: roomA.createdAt,
     })),
     listJoined: vi.fn(async () => [joinedRoom]),
+    join: vi.fn(async () => roomA),
     ...overrides,
   }
 }

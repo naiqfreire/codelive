@@ -66,10 +66,25 @@ async def test_by_code_unknown_code_returns_404_room_not_found(client):
     assert resp.json()["error"]["code"] == "room_not_found"
 
 
-async def test_by_code_without_session_is_401(client):
+async def test_by_code_without_session_returns_200(client):
+    await _register(client, "bycode-anonymous@example.com")
+    room = await _create_room(client)
+    client.cookies.clear()
+
+    resp = await client.get(f"/api/rooms/by-code/{room['access_code']}")
+
+    assert resp.status_code == 200
+    assert resp.json()["id"] == room["id"]
+    assert "codelive_anon" not in resp.cookies
+
+
+async def test_by_code_unknown_without_session_returns_404(client):
+    client.cookies.clear()
+
     resp = await client.get("/api/rooms/by-code/ZZZZZZ")
-    assert resp.status_code == 401
-    assert resp.json()["error"]["code"] == "not_authenticated"
+
+    assert resp.status_code == 404
+    assert resp.json()["error"]["code"] == "room_not_found"
 
 
 async def test_by_code_on_closed_room_returns_status_closed(client):
