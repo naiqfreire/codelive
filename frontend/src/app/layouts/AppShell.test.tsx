@@ -4,8 +4,16 @@ import { describe, expect, it, vi } from 'vitest'
 import { AuthProvider } from '../../features/auth'
 import type { AuthApi } from '../../features/auth'
 import { ApiError } from '../../shared/http'
-import { createFakeAuthApi } from '../../test/auth'
+import { anonymousAuthError, createFakeAuthApi } from '../../test/auth'
 import { AppShell } from './AppShell'
+
+function anonymousApi(): AuthApi {
+  return createFakeAuthApi({
+    me: async () => {
+      throw anonymousAuthError()
+    },
+  })
+}
 
 function renderShell(
   api: AuthApi = createFakeAuthApi(),
@@ -116,5 +124,34 @@ describe('AppShell', () => {
       await screen.findByText('Não foi possível sair. Tente novamente.'),
     ).toBeInTheDocument()
     expect(screen.getByText('Conteúdo roteado')).toBeInTheDocument()
+  })
+
+  it('offers the access-code entry to an anonymous visitor', async () => {
+    renderShell(anonymousApi(), ['/rooms/join'])
+
+    expect(await screen.findByRole('link', { name: /entrar com código/i })).toHaveAttribute(
+      'href',
+      '/rooms/join',
+    )
+    expect(screen.getByText('tela do código')).toBeInTheDocument()
+  })
+
+  it('hides the owner navigation and the logout action for an anonymous visitor', async () => {
+    renderShell(anonymousApi(), ['/rooms/join'])
+
+    await screen.findByRole('link', { name: /entrar com código/i })
+
+    expect(screen.queryByRole('link', { name: /minhas salas/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^sair$/i })).not.toBeInTheDocument()
+    expect(screen.queryByText(/olá,/i)).not.toBeInTheDocument()
+  })
+
+  it('links an anonymous visitor to the login page', async () => {
+    renderShell(anonymousApi(), ['/rooms/join'])
+
+    expect(await screen.findByRole('link', { name: /^entrar$/i })).toHaveAttribute(
+      'href',
+      '/login',
+    )
   })
 })

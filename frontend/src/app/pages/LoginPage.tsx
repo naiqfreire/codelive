@@ -115,6 +115,12 @@ export default function LoginPage({ onSubmit }: LoginPageProps) {
           Criar conta
         </Link>
       </p>
+      <p className="mt-2 text-sm text-muted-foreground">
+        Vai assistir a uma sala?{' '}
+        <Link className="font-medium text-accent underline-offset-4 hover:underline" to="/rooms/join">
+          Entrar sem conta
+        </Link>
+      </p>
     </section>
   )
 }

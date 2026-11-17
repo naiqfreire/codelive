@@ -94,6 +94,15 @@ describe('LoginPage', () => {
     ).toBeInTheDocument()
   })
 
+  it('offers the anonymous entry for a visitor without an account', () => {
+    renderLogin()
+
+    expect(screen.getByRole('link', { name: /entrar sem conta/i })).toHaveAttribute(
+      'href',
+      '/rooms/join',
+    )
+  })
+
   it('shows a loading state while submitting and restores afterwards', async () => {
     let resolveSubmit: () => void = () => {}
     const onSubmit = vi.fn(

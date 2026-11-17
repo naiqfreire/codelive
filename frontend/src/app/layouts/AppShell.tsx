@@ -11,11 +11,12 @@ const LOGOUT_ERROR = 'Não foi possível sair. Tente novamente.'
 export function AppShell() {
   const { pathname } = useLocation()
   const navigate = useNavigate()
-  const { user, logout } = useAuth()
+  const { status, user, logout } = useAuth()
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   const [logoutError, setLogoutError] = useState<string | null>(null)
+  const isAuthenticated = status === 'authenticated'
   const isJoinSection = pathname === '/rooms/join' || pathname.endsWith('/join')
-  const isRoomsSection = pathname.startsWith('/rooms') && !isJoinSection
+  const isRoomsSection = isAuthenticated && pathname.startsWith('/rooms') && !isJoinSection
 
   async function handleLogout() {
     setLogoutError(null)
@@ -36,23 +37,27 @@ export function AppShell() {
       <header className="border-b border-border bg-surface/60">
         <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-4 px-6 py-4">
           <Link
-            to="/rooms"
+            to={isAuthenticated ? '/rooms' : '/rooms/join'}
             className="font-mono text-sm tracking-[0.3em] text-accent uppercase focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
           >
             CodeLive
           </Link>
 
           <nav aria-label="Navegação principal" className="flex flex-wrap items-center gap-2">
-            <Link
-              to="/rooms"
-              aria-current={isRoomsSection ? 'page' : undefined}
-              className={[
-                NAV_LINK_CLASSES,
-                isRoomsSection ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground',
-              ].join(' ')}
-            >
-              Minhas salas
-            </Link>
+            {isAuthenticated ? (
+              <Link
+                to="/rooms"
+                aria-current={isRoomsSection ? 'page' : undefined}
+                className={[
+                  NAV_LINK_CLASSES,
+                  isRoomsSection
+                    ? 'bg-muted text-foreground'
+                    : 'text-muted-foreground hover:text-foreground',
+                ].join(' ')}
+              >
+                Minhas salas
+              </Link>
+            ) : null}
             <Link
               to="/rooms/join"
               aria-current={isJoinSection ? 'page' : undefined}
@@ -65,21 +70,28 @@ export function AppShell() {
             >
               Entrar com código
             </Link>
-            {user ? (
+            {isAuthenticated && user ? (
               <span className="max-w-xs truncate px-3 text-sm text-muted-foreground">
                 Olá, {user.name}
               </span>
             ) : null}
-            <Button
-              type="button"
-              variant="secondary"
-              isLoading={isLoggingOut}
-              onClick={() => {
-                void handleLogout()
-              }}
-            >
-              {isLoggingOut ? 'Saindo…' : 'Sair'}
-            </Button>
+            {isAuthenticated ? (
+              <Button
+                type="button"
+                variant="secondary"
+                isLoading={isLoggingOut}
+                onClick={() => {
+                  void handleLogout()
+                }}
+              >
+                {isLoggingOut ? 'Saindo…' : 'Sair'}
+              </Button>
+            ) : null}
+            {status === 'anonymous' ? (
+              <Link to="/login" className={NAV_LINK_CLASSES + ' text-muted-foreground hover:text-foreground'}>
+                Entrar
+              </Link>
+            ) : null}
           </nav>
         </div>
       </header>
