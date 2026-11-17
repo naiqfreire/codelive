@@ -17,6 +17,7 @@ const activeRoom: RoomLookup = {
 
 type PageProps = {
   initialCode?: string
+  anonymous?: boolean
   onSubmit?: (code: string) => Promise<RoomLookup>
   onValidRoom?: (room: RoomLookup) => void
   onSessionExpired?: () => Promise<void>
@@ -34,6 +35,7 @@ function renderPage(overrides: PageProps = {}) {
         onValidRoom={overrides.onValidRoom ?? onValidRoom}
         onSessionExpired={overrides.onSessionExpired ?? onSessionExpired}
         initialCode={overrides.initialCode}
+        anonymous={overrides.anonymous}
       />
     </MemoryRouter>,
   )
@@ -56,6 +58,25 @@ describe('CodeEntryPage', () => {
     expect(screen.getByText('Passo 2 de 4')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Entrar com código' })).toBeInTheDocument()
     expect(screen.getByText(/6 caracteres, como k7m2qx/i)).toBeInTheDocument()
+  })
+
+  it('links an authenticated visitor back to the room list', () => {
+    renderPage()
+
+    expect(screen.getByRole('link', { name: /voltar para minhas salas/i })).toHaveAttribute(
+      'href',
+      '/rooms',
+    )
+  })
+
+  it('links an anonymous visitor to the login page instead of the room list', () => {
+    renderPage({ anonymous: true })
+
+    expect(screen.queryByRole('link', { name: /minhas salas/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /entrar na sua conta/i })).toHaveAttribute(
+      'href',
+      '/login',
+    )
   })
 
   it('starts from a code carried by navigation state', () => {

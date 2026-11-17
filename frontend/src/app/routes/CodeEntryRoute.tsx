@@ -23,7 +23,7 @@ function readInitialCode(state: unknown): string | undefined {
 export default function CodeEntryRoute({ api = roomsApi }: CodeEntryRouteProps) {
   const navigate = useNavigate()
   const location = useLocation()
-  const { logout } = useAuth()
+  const { status, logout } = useAuth()
 
   function handleSubmit(code: string): Promise<RoomLookup> {
     return api.getByCode(code)
@@ -44,6 +44,7 @@ export default function CodeEntryRoute({ api = roomsApi }: CodeEntryRouteProps) 
   return (
     <CodeEntryPage
       initialCode={readInitialCode(location.state)}
+      anonymous={status === 'anonymous'}
       onSubmit={handleSubmit}
       onValidRoom={handleValidRoom}
       onSessionExpired={handleSessionExpired}

@@ -17,6 +17,8 @@ const LOOKUP_ERROR_FALLBACK = 'Não foi possível validar o código. Tente novam
 
 type CodeEntryPageProps = {
   initialCode?: string
+  /** True when the visitor has no account and the room list is unreachable. */
+  anonymous?: boolean
   onSubmit: (code: string) => Promise<RoomLookup>
   onValidRoom: (room: RoomLookup) => void
   onSessionExpired: () => Promise<void>
@@ -24,6 +26,7 @@ type CodeEntryPageProps = {
 
 export default function CodeEntryPage({
   initialCode,
+  anonymous = false,
   onSubmit,
   onValidRoom,
   onSessionExpired,
@@ -172,9 +175,15 @@ export default function CodeEntryPage({
       </form>
 
       <p className="mt-6 text-sm text-muted-foreground">
-        <Link className="font-medium text-accent underline-offset-4 hover:underline" to="/rooms">
-          Voltar para minhas salas
-        </Link>
+        {anonymous ? (
+          <Link className="font-medium text-accent underline-offset-4 hover:underline" to="/login">
+            Entrar na sua conta
+          </Link>
+        ) : (
+          <Link className="font-medium text-accent underline-offset-4 hover:underline" to="/rooms">
+            Voltar para minhas salas
+          </Link>
+        )}
       </p>
     </section>
   )
