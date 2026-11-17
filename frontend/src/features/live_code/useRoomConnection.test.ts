@@ -1,5 +1,10 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  LATEST_VERSION_MESSAGE,
+  MAX_CODE_BYTES,
+  SYNC_NOTICE_DURATION_MS,
+} from './messages'
 import { reconnectDelay, useRoomConnection } from './useRoomConnection'
 
 type Handler = ((event: Event) => void) | null
@@ -311,5 +316,308 @@ describe('useRoomConnection', () => {
     expect(first.closed).toBe(true)
     expect(FakeWebSocket.instances).toHaveLength(2)
     expect(latestSocket().url).toContain('/api/ws/rooms/room-2')
+  })
+})
+
+describe('useRoomConnection code recovery and sending', () => {
+  function openWithSnapshot(content: string, roomId = 'room-1') {
+    const hook = renderHook(() => useRoomConnection(roomId))
+
+    act(() => {
+      latestSocket().open()
+      latestSocket().receive({
+        type: 'snapshot',
+        room_id: roomId,
+        content,
+        language: 'python',
+        content_hash: 'sha256:server',
+        request_id: 'req-snapshot',
+      })
+    })
+
+    return hook
+  }
+
+  it('loads the persisted code from the first snapshot and marks it loaded', () => {
+    const { result } = openWithSnapshot('persistido')
+
+    expect(result.current.code).toBe('persistido')
+    expect(result.current.hasSnapshot).toBe(true)
+    expect(result.current.conflict).toBeNull()
+    expect(result.current.syncNotice).toBeNull()
+  })
+
+  it('sends the owner edit after the debounce window', () => {
+    const { result } = openWithSnapshot('')
+    const socket = latestSocket()
+
+    act(() => result.current.updateCode("print('oi')"))
+
+    expect(result.current.code).toBe("print('oi')")
+
+    act(() => vi.advanceTimersByTime(299))
+    expect(socket.sent).toEqual([JSON.stringify({ type: 'join' })])
+
+    act(() => vi.advanceTimersByTime(1))
+    expect(socket.sent).toEqual([
+      JSON.stringify({ type: 'join' }),
+      JSON.stringify({ type: 'code_update', content: "print('oi')" }),
+    ])
+  })
+
+  it('coalesces rapid edits into the latest content', () => {
+    const { result } = openWithSnapshot('')
+    const socket = latestSocket()
+
+    act(() => result.current.updateCode('a'))
+    act(() => vi.advanceTimersByTime(150))
+    act(() => result.current.updateCode('ab'))
+    act(() => vi.advanceTimersByTime(299))
+
+    expect(socket.sent).toHaveLength(1)
+
+    act(() => vi.advanceTimersByTime(1))
+    expect(socket.sent[1]).toBe(JSON.stringify({ type: 'code_update', content: 'ab' }))
+  })
+
+  it('does not send while the socket is down and keeps the local draft', () => {
+    const { result } = openWithSnapshot('')
+    const first = latestSocket()
+
+    act(() => {
+      first.drop()
+      result.current.updateCode('rascunho offline')
+    })
+    act(() => vi.advanceTimersByTime(300))
+
+    expect(first.sent).toHaveLength(1)
+
+    act(() => vi.advanceTimersByTime(700))
+    const second = latestSocket()
+    expect(second).not.toBe(first)
+
+    act(() => second.open())
+    expect(second.sent).toEqual([JSON.stringify({ type: 'join' })])
+    expect(result.current.code).toBe('rascunho offline')
+  })
+
+  it('applies a changed snapshot after reconnect and shows the latest version notice', () => {
+    const { result } = openWithSnapshot('v1')
+
+    act(() => latestSocket().drop())
+    act(() => vi.advanceTimersByTime(1000))
+
+    act(() => {
+      latestSocket().open()
+      latestSocket().receive({
+        type: 'snapshot',
+        room_id: 'room-1',
+        content: 'v2',
+        language: 'python',
+        content_hash: 'sha256:v2',
+        request_id: 'req-reconnect',
+      })
+    })
+
+    expect(result.current.code).toBe('v2')
+    expect(result.current.conflict).toBeNull()
+    expect(result.current.syncNotice).toBe(LATEST_VERSION_MESSAGE)
+
+    act(() => vi.advanceTimersByTime(SYNC_NOTICE_DURATION_MS))
+    expect(result.current.syncNotice).toBeNull()
+  })
+
+  it('keeps local edits when reconnecting with a diverged snapshot', () => {
+    const { result } = openWithSnapshot('server-v1')
+
+    act(() => {
+      latestSocket().drop()
+      result.current.updateCode('local-draft')
+    })
+
+    act(() => vi.advanceTimersByTime(1000))
+    const second = latestSocket()
+
+    act(() => {
+      second.open()
+      second.receive({
+        type: 'snapshot',
+        room_id: 'room-1',
+        content: 'server-v2',
+        language: 'python',
+        content_hash: 'sha256:server-v2',
+        request_id: 'req-reconnect',
+      })
+    })
+
+    expect(result.current.code).toBe('local-draft')
+    expect(result.current.conflict).toEqual({
+      serverContent: 'server-v2',
+      receivedAt: expect.any(String),
+    })
+    expect(result.current.syncNotice).toBeNull()
+
+    act(() => vi.advanceTimersByTime(300))
+    expect(second.sent).toEqual([JSON.stringify({ type: 'join' })])
+  })
+
+  it('accepts the server version and clears the conflict', () => {
+    const { result } = openWithSnapshot('server-v1')
+
+    act(() => {
+      latestSocket().drop()
+      result.current.updateCode('local-draft')
+    })
+    act(() => vi.advanceTimersByTime(1000))
+    act(() => {
+      latestSocket().open()
+      latestSocket().receive({
+        type: 'snapshot',
+        room_id: 'room-1',
+        content: 'server-v2',
+        language: 'python',
+        content_hash: 'sha256:server-v2',
+        request_id: 'req-reconnect',
+      })
+    })
+
+    act(() => result.current.acceptServerVersion())
+
+    expect(result.current.code).toBe('server-v2')
+    expect(result.current.conflict).toBeNull()
+    expect(result.current.syncNotice).toBe(LATEST_VERSION_MESSAGE)
+  })
+
+  it('keeps the local version and resends it immediately', () => {
+    const { result } = openWithSnapshot('server-v1')
+
+    act(() => {
+      latestSocket().drop()
+      result.current.updateCode('local-draft')
+    })
+    act(() => vi.advanceTimersByTime(1000))
+    const second = latestSocket()
+    act(() => {
+      second.open()
+      second.receive({
+        type: 'snapshot',
+        room_id: 'room-1',
+        content: 'server-v2',
+        language: 'python',
+        content_hash: 'sha256:server-v2',
+        request_id: 'req-reconnect',
+      })
+    })
+
+    act(() => result.current.keepLocalVersion())
+
+    expect(result.current.code).toBe('local-draft')
+    expect(result.current.conflict).toBeNull()
+    expect(second.sent).toEqual([
+      JSON.stringify({ type: 'join' }),
+      JSON.stringify({ type: 'code_update', content: 'local-draft' }),
+    ])
+  })
+
+  it('confirms the local edit when the server echoes it', () => {
+    const { result } = openWithSnapshot('')
+    const first = latestSocket()
+
+    act(() => result.current.updateCode('sincronizado'))
+    act(() => vi.advanceTimersByTime(300))
+    act(() => {
+      first.receive({
+        type: 'code_update',
+        content: 'sincronizado',
+        content_hash: 'sha256:sync',
+        request_id: 'req-echo',
+      })
+      first.drop()
+    })
+
+    act(() => vi.advanceTimersByTime(1000))
+    act(() => {
+      latestSocket().open()
+      latestSocket().receive({
+        type: 'snapshot',
+        room_id: 'room-1',
+        content: 'outra-versao',
+        language: 'python',
+        content_hash: 'sha256:other',
+        request_id: 'req-reconnect',
+      })
+    })
+
+    expect(result.current.conflict).toBeNull()
+    expect(result.current.code).toBe('outra-versao')
+    expect(result.current.syncNotice).toBe(LATEST_VERSION_MESSAGE)
+  })
+
+  it('ignores an older echo while a newer local edit is pending', () => {
+    const { result } = openWithSnapshot('')
+    const socket = latestSocket()
+
+    act(() => result.current.updateCode('primeiro'))
+    act(() => vi.advanceTimersByTime(300))
+    act(() => result.current.updateCode('segundo'))
+    act(() => {
+      socket.receive({
+        type: 'code_update',
+        content: 'primeiro',
+        content_hash: 'sha256:first',
+        request_id: 'req-echo',
+      })
+    })
+
+    expect(result.current.code).toBe('segundo')
+
+    act(() => vi.advanceTimersByTime(300))
+    expect(socket.sent[2]).toBe(JSON.stringify({ type: 'code_update', content: 'segundo' }))
+  })
+
+  it('blocks oversized content and resumes when it fits', () => {
+    const { result } = openWithSnapshot('')
+    const socket = latestSocket()
+
+    act(() => result.current.updateCode('a'.repeat(MAX_CODE_BYTES + 1)))
+    act(() => vi.advanceTimersByTime(300))
+
+    expect(result.current.isOversize).toBe(true)
+    expect(socket.sent).toHaveLength(1)
+
+    act(() => result.current.updateCode('ok'))
+    act(() => vi.advanceTimersByTime(300))
+
+    expect(result.current.isOversize).toBe(false)
+    expect(socket.sent[1]).toBe(JSON.stringify({ type: 'code_update', content: 'ok' }))
+  })
+
+  it('measures the size limit on UTF-8 bytes', () => {
+    const { result } = openWithSnapshot('')
+    const socket = latestSocket()
+
+    act(() => result.current.updateCode('á'.repeat(MAX_CODE_BYTES / 2 + 1)))
+    expect(result.current.isOversize).toBe(true)
+
+    act(() => result.current.updateCode('á'.repeat(MAX_CODE_BYTES / 2)))
+    act(() => vi.advanceTimersByTime(300))
+
+    expect(result.current.isOversize).toBe(false)
+    expect(socket.sent[1]).toBe(
+      JSON.stringify({ type: 'code_update', content: 'á'.repeat(MAX_CODE_BYTES / 2) }),
+    )
+  })
+
+  it('applies restored content without sending it back', () => {
+    const { result } = openWithSnapshot('antigo')
+    const socket = latestSocket()
+
+    act(() => result.current.applyRestoredCode('restaurado'))
+
+    expect(result.current.code).toBe('restaurado')
+    expect(result.current.syncNotice).toBeNull()
+
+    act(() => vi.advanceTimersByTime(300))
+    expect(socket.sent).toEqual([JSON.stringify({ type: 'join' })])
   })
 })

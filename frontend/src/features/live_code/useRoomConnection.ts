@@ -1,7 +1,13 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { RoomLanguage } from '../rooms'
 import { logLiveEvent } from './log'
-import { joinFrame, parseRoomFrame } from './protocol'
+import {
+  CODE_SEND_DEBOUNCE_MS,
+  LATEST_VERSION_MESSAGE,
+  MAX_CODE_BYTES,
+  SYNC_NOTICE_DURATION_MS,
+} from './messages'
+import { codeUpdateFrame, joinFrame, parseRoomFrame } from './protocol'
 import type { RoomRole } from './protocol'
 import { buildRoomSocketUrl } from './socketUrl'
 
@@ -14,6 +20,12 @@ export type RoomConnectionError = {
   requestId: string
 }
 
+/** Server content received while the local editor had unsent changes. */
+export type RoomConflict = {
+  serverContent: string
+  receivedAt: string
+}
+
 export type RoomConnectionState = {
   status: RoomConnectionStatus
   code: string
@@ -21,6 +33,25 @@ export type RoomConnectionState = {
   participantCount: number
   role: RoomRole | null
   lastError: RoomConnectionError | null
+  /** True after the first snapshot; the owner editor is locked before it. */
+  hasSnapshot: boolean
+  /** Local content exceeds the server's 256 KiB UTF-8 limit. */
+  isOversize: boolean
+  /** Snapshot that arrived while local edits were unsent. */
+  conflict: RoomConflict | null
+  /** Polite notice shown after a changed snapshot or an accepted server version. */
+  syncNotice: string | null
+}
+
+export type RoomConnection = RoomConnectionState & {
+  /** Called by the owner editor on every change; debounces the outgoing frame. */
+  updateCode: (content: string) => void
+  /** Applies a restored version without sending it back (the server already has it). */
+  applyRestoredCode: (content: string) => void
+  /** Conflict action: replace the local draft with the server snapshot. */
+  acceptServerVersion: () => void
+  /** Conflict action: keep the local draft and send it immediately. */
+  keepLocalVersion: () => void
 }
 
 export type UseRoomConnectionOptions = {
@@ -31,11 +62,17 @@ export type UseRoomConnectionOptions = {
 export const RECONNECT_BASE_DELAY_MS = 1000
 export const RECONNECT_MAX_DELAY_MS = 8000
 export const RECONNECT_JITTER_MS = 300
+const SOCKET_OPEN = 1
 
 /** Exponential backoff with jitter; retries never stop while the page is open. */
 export function reconnectDelay(attempt: number, random: () => number = Math.random): number {
   const exponential = Math.min(RECONNECT_MAX_DELAY_MS, RECONNECT_BASE_DELAY_MS * 2 ** attempt)
   return exponential + Math.floor(random() * RECONNECT_JITTER_MS)
+}
+
+/** UTF-8 byte length, matching the backend's `MAX_CODE_BYTES` measurement. */
+export function utf8ByteLength(value: string): number {
+  return new TextEncoder().encode(value).length
 }
 
 function initialState(roomId: string | null, code: string): RoomConnectionState {
@@ -46,20 +83,25 @@ function initialState(roomId: string | null, code: string): RoomConnectionState 
     participantCount: 0,
     role: null,
     lastError: null,
+    hasSnapshot: false,
+    isOversize: utf8ByteLength(code) > MAX_CODE_BYTES,
+    conflict: null,
+    syncNotice: null,
   }
 }
 
 /**
- * Room live channel: joins, tracks presence and reconnects on its own.
+ * Room live channel: joins, tracks presence, reconnects and syncs code.
  *
- * The last received code is preserved across drops and the next `snapshot`
- * replaces it without resetting the editor, so a reconnecting spectator never
- * loses state (RNF02/RNF04).
+ * Receiving is safe for both roles. Sending is wired only by the owner page,
+ * but the server is the authority on who may write. A reconnect snapshot never
+ * silently overwrites unsent local edits: it becomes a `conflict` the owner
+ * resolves explicitly (RNF02/RNF04).
  */
 export function useRoomConnection(
   roomId: string | null,
   options: UseRoomConnectionOptions = {},
-): RoomConnectionState {
+): RoomConnection {
   const initialCodeRef = useRef(options.initialCode ?? '')
   initialCodeRef.current = options.initialCode ?? ''
 
@@ -67,8 +109,163 @@ export function useRoomConnection(
     initialState(roomId, initialCodeRef.current),
   )
 
+  const socketRef = useRef<WebSocket | null>(null)
+  const codeRef = useRef(initialCodeRef.current)
+  const dirtyRef = useRef(false)
+  const conflictRef = useRef<RoomConflict | null>(null)
+  const hasSnapshotRef = useRef(false)
+  const sendTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const activeRoomIdRef = useRef<string | null>(roomId)
+
+  const clearSendTimer = useCallback(() => {
+    if (sendTimerRef.current !== null) {
+      clearTimeout(sendTimerRef.current)
+      sendTimerRef.current = null
+    }
+  }, [])
+
+  const clearNoticeTimer = useCallback(() => {
+    if (noticeTimerRef.current !== null) {
+      clearTimeout(noticeTimerRef.current)
+      noticeTimerRef.current = null
+    }
+  }, [])
+
+  const showSyncNotice = useCallback(() => {
+    clearNoticeTimer()
+    setState((previous) => ({ ...previous, syncNotice: LATEST_VERSION_MESSAGE }))
+    noticeTimerRef.current = setTimeout(() => {
+      noticeTimerRef.current = null
+      setState((previous) => ({ ...previous, syncNotice: null }))
+    }, SYNC_NOTICE_DURATION_MS)
+  }, [clearNoticeTimer])
+
+  const sendNow = useCallback(() => {
+    clearSendTimer()
+
+    if (!dirtyRef.current || conflictRef.current !== null) {
+      return
+    }
+
+    const socket = socketRef.current
+    if (!socket || socket.readyState !== SOCKET_OPEN) {
+      return
+    }
+
+    const content = codeRef.current
+    if (utf8ByteLength(content) > MAX_CODE_BYTES) {
+      return
+    }
+
+    try {
+      socket.send(JSON.stringify(codeUpdateFrame(content)))
+      logLiveEvent('code_update_sent', {
+        room_id: activeRoomIdRef.current,
+        size_bytes: utf8ByteLength(content),
+      })
+    } catch {
+      // The socket's onerror/onclose owns reconnection; the draft stays dirty.
+    }
+  }, [clearSendTimer])
+
+  const scheduleSend = useCallback(
+    (delay = CODE_SEND_DEBOUNCE_MS) => {
+      if (conflictRef.current !== null) {
+        return
+      }
+
+      clearSendTimer()
+      sendTimerRef.current = setTimeout(() => {
+        sendTimerRef.current = null
+        sendNow()
+      }, delay)
+    },
+    [clearSendTimer, sendNow],
+  )
+
+  const updateCode = useCallback(
+    (content: string) => {
+      codeRef.current = content
+      dirtyRef.current = true
+      const oversized = utf8ByteLength(content) > MAX_CODE_BYTES
+
+      setState((previous) => ({
+        ...previous,
+        code: content,
+        isOversize: oversized,
+      }))
+
+      if (oversized || conflictRef.current !== null) {
+        clearSendTimer()
+        return
+      }
+
+      scheduleSend()
+    },
+    [clearSendTimer, scheduleSend],
+  )
+
+  const applyRestoredCode = useCallback(
+    (content: string) => {
+      clearSendTimer()
+      codeRef.current = content
+      dirtyRef.current = false
+      conflictRef.current = null
+
+      setState((previous) => ({
+        ...previous,
+        code: content,
+        isOversize: utf8ByteLength(content) > MAX_CODE_BYTES,
+        conflict: null,
+        lastError: null,
+      }))
+    },
+    [clearSendTimer],
+  )
+
+  const acceptServerVersion = useCallback(() => {
+    const conflict = conflictRef.current
+    if (conflict === null) {
+      return
+    }
+
+    clearSendTimer()
+    codeRef.current = conflict.serverContent
+    dirtyRef.current = false
+    conflictRef.current = null
+
+    setState((previous) => ({
+      ...previous,
+      code: conflict.serverContent,
+      isOversize: utf8ByteLength(conflict.serverContent) > MAX_CODE_BYTES,
+      conflict: null,
+      lastError: null,
+    }))
+    showSyncNotice()
+  }, [clearSendTimer, showSyncNotice])
+
+  const keepLocalVersion = useCallback(() => {
+    if (conflictRef.current === null) {
+      return
+    }
+
+    conflictRef.current = null
+    setState((previous) => ({ ...previous, conflict: null }))
+    sendNow()
+  }, [sendNow])
+
   useEffect(() => {
     const initialCode = initialCodeRef.current
+
+    activeRoomIdRef.current = roomId
+    socketRef.current = null
+    codeRef.current = initialCode
+    dirtyRef.current = false
+    conflictRef.current = null
+    hasSnapshotRef.current = false
+    clearSendTimer()
+    clearNoticeTimer()
 
     if (!roomId) {
       setState(initialState(null, initialCode))
@@ -123,6 +320,7 @@ export function useRoomConnection(
       }
 
       socket = nextSocket
+      socketRef.current = nextSocket
 
       nextSocket.onopen = () => {
         if (disposed) {
@@ -180,21 +378,71 @@ export function useRoomConnection(
         }
 
         if (frame.type === 'snapshot') {
+          const firstSnapshot = !hasSnapshotRef.current
+          const previousCode = codeRef.current
+          hasSnapshotRef.current = true
+
+          if (dirtyRef.current && previousCode !== frame.content) {
+            clearSendTimer()
+            const conflict: RoomConflict = {
+              serverContent: frame.content,
+              receivedAt: new Date().toISOString(),
+            }
+            conflictRef.current = conflict
+            setState((previous) => ({
+              ...previous,
+              language: frame.language ?? previous.language,
+              hasSnapshot: true,
+              isOversize: utf8ByteLength(previousCode) > MAX_CODE_BYTES,
+              conflict,
+              lastError: null,
+              syncNotice: null,
+            }))
+            return
+          }
+
+          dirtyRef.current = false
+          conflictRef.current = null
+          codeRef.current = frame.content
+
           setState((previous) => ({
             ...previous,
             code: frame.content,
             language: frame.language ?? previous.language,
+            hasSnapshot: true,
+            isOversize: utf8ByteLength(frame.content) > MAX_CODE_BYTES,
+            conflict: null,
             lastError: null,
           }))
+
+          if (!firstSnapshot && frame.content !== previousCode) {
+            showSyncNotice()
+          }
           return
         }
 
         if (frame.type === 'code_update') {
-          setState((previous) => ({
-            ...previous,
-            code: frame.content,
-            lastError: null,
-          }))
+          if (frame.content === codeRef.current) {
+            // Our own echo (or an identical update): the server is in sync.
+            dirtyRef.current = false
+            setState((previous) => ({
+              ...previous,
+              code: frame.content,
+              lastError: null,
+            }))
+            return
+          }
+
+          if (!dirtyRef.current) {
+            codeRef.current = frame.content
+            setState((previous) => ({
+              ...previous,
+              code: frame.content,
+              isOversize: utf8ByteLength(frame.content) > MAX_CODE_BYTES,
+              lastError: null,
+            }))
+          }
+          // A stale echo while newer local edits are pending is ignored.
         }
       }
 
@@ -208,6 +456,7 @@ export function useRoomConnection(
         }
 
         socket = null
+        socketRef.current = null
         logLiveEvent('socket_closed', { room_id: activeRoomId, had_connected: hasConnected })
         scheduleReconnect()
       }
@@ -223,10 +472,19 @@ export function useRoomConnection(
         retryTimer = null
       }
 
+      clearSendTimer()
+      clearNoticeTimer()
+      socketRef.current = null
       socket?.close()
       socket = null
     }
-  }, [roomId])
+  }, [roomId, clearNoticeTimer, clearSendTimer, showSyncNotice])
 
-  return state
+  return {
+    ...state,
+    updateCode,
+    applyRestoredCode,
+    acceptServerVersion,
+    keepLocalVersion,
+  }
 }
