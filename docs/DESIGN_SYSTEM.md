@@ -438,6 +438,48 @@ restaurado ao editor da página, sem duplicar o estado do código.
   DEV-only de estados (Lista / Vazio / Carregando / Erro), porque as telas da sala ainda usam
   fixtures. A restauração de desenvolvimento também atualiza o editor.
 
+### 6.14 Recuperação de código e reconexão (#42)
+
+Ao abrir ou reconectar, o editor precisa mostrar o código persistido, continuar aceitando edição e
+avisar quando o servidor tem uma versão mais nova — sem nunca descartar em silêncio uma edição local
+ainda não enviada (RNF02/RNF04). O canal vive em `features/live_code/useRoomConnection.ts`: ele é a
+única fonte do código exibido e expõe `updateCode`, `applyRestoredCode`, `acceptServerVersion` e
+`keepLocalVersion`. A página só renderiza e encaminha essas ações.
+
+- **Recuperação na abertura.** O backend já envia um `snapshot` em todo join/reconexão; nenhuma
+  chamada extra é feita. A rota resolve a sala por `GET /api/rooms/mine` (dono) ou
+  `GET /api/rooms/joined` (espectador), então um reload ou link direto funciona sem estado em
+  memória. Enquanto a consulta não assenta, a rota mostra "Carregando sala…" (`role="status"`);
+  erro mostra `role="alert"` com "Tentar novamente"; sala fora da lista mostra o estado de não
+  encontrada da própria página.
+- **Editor do dono travado até o primeiro snapshot.** Antes do `snapshot` o editor é somente
+  leitura e explica "Carregando código da sala…". Isso evita que um documento vazio sobrescreva o
+  código persistido. Depois do primeiro snapshot ele fica editável mesmo desconectado.
+- **Envio do dono.** `onChange → updateCode` guarda o rascunho e agenda um `code_update` com debounce
+  de 300 ms, sempre com o conteúdo completo. Antes de enviar, o tamanho é medido em bytes UTF-8
+  (`TextEncoder`): acima de 256 KiB (`262_144`) nada é enviado e surge um alerta "O código excede o
+  limite de 256 KiB…". O servidor continua sendo a autoridade sobre tamanho e permissão.
+- **Versão mais recente.** Quando um `snapshot` de reconexão difere do código já exibido, o editor
+  recebe o novo conteúdo e uma região `aria-live="polite"` anuncia "Versão mais recente carregada
+  do servidor." por 5 s. É um aviso educado, não um `role="status"`, porque o pill de conexão da
+  §6.11 já ocupa esse papel. `code_update` recebidos não disparam o aviso.
+- **Conflito na reconexão.** Se o `snapshot` divergir de uma edição local ainda não enviada, o
+  conteúdo local é mantido e aparece um banner `role="alert"`: "O servidor tem uma versão mais
+  recente." / "Sua edição local não foi enviada. Escolha qual versão manter.", com a hora de
+  recebimento. As ações são "Carregar versão do servidor" (primária) e "Manter minha edição"
+  (secundária, reenvia imediatamente). Enquanto o banner está aberto o editor continua editável,
+  mas os envios ficam pausados; aceitar o servidor limpa o rascunho e mostra o aviso de versão mais
+  recente.
+- **Espectador.** A mesma recuperação vale para a leitura: antes do primeiro snapshot mostra
+  "Carregando código da sala…"; depois, um `snapshot` alterado também anuncia a versão mais
+  recente, sem banner de conflito (o espectador nunca envia).
+- **Restauração de versão.** `applyRestoredCode` aplica o conteúdo devolvido pela §6.13 sem
+  reenviá-lo, porque a restauração já persistiu o novo estado no servidor. O aviso fica a cargo da
+  região do histórico.
+- **Revisão visual.** `DevOwnerRoomPage` e `DevSpectatorRoomPage` usam um canal em memória
+  (`devConnection.ts`) para manter o editor editável/somente leitura e revisar a restauração sem
+  backend.
+
 ## 7. Checklist de entrega
 
 - [ ] Nenhum emoji como ícone; SVG com `aria-hidden` quando decorativo.
