@@ -53,16 +53,25 @@ class RoomHub:
         self._rooms.clear()
 
     async def broadcast(
-        self, room_id: uuid.UUID, build: Callable[[Connection], dict]
+        self,
+        room_id: uuid.UUID,
+        build: Callable[[Connection], dict],
+        exclude_user_id: uuid.UUID | None = None,
     ) -> None:
         """Send ``build(conn)`` to every joined socket in the room.
 
         The frame is built per recipient (presence.role is the recipient's
-        own role, D-11). Failing sockets are removed after the loop; the
-        loop itself never raises.
+        own role, D-11). ``exclude_user_id`` skips every socket belonging to
+        that user (VERS-07): the restoring owner resyncs from the REST
+        response only. ``None`` excludes nobody; anonymous sockets carry
+        ``user_id=None`` and never match a UUID. An excluded socket is not
+        sent to, not counted as failed and not evicted. Failing sockets are
+        removed after the loop; the loop itself never raises.
         """
         failed: list[Connection] = []
         for conn in tuple(self._rooms.get(room_id, {}).values()):
+            if exclude_user_id is not None and conn.user_id == exclude_user_id:
+                continue
             try:
                 await conn.websocket.send_json(build(conn))
             except Exception:

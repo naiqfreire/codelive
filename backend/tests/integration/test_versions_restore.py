@@ -599,6 +599,153 @@ async def test_restore_identical_content_still_writes_state_and_version(
     assert await _count_versions(db_session, room_id) == 2
 
 
+# --- VERS-07 (Phase 9): the restoring owner's own socket stays silent ------
+
+
+def _register(ws_client, email, name="User"):
+    """Register a user; returns its session cookie (local copy, D-12)."""
+    resp = ws_client.post(
+        "/api/auth/register",
+        json={"name": name, "email": email, "password": "correct-horse"},
+    )
+    assert resp.status_code == 201
+    return ws_client.cookies.get("codelive_session")
+
+
+async def test_restore_snapshot_skips_owner_socket_and_reaches_spectators(
+    ws_client, db_session, capsys
+):
+    """VERS-07: owner silent, anonymous spectator receives the snapshot.
+
+    Runs the owner socket and an anonymous spectator together, restores over
+    REST with the owner cookie, then proves the spectator got exactly one
+    byte-equal snapshot with its own ``request_id`` while the owner's next
+    frame after a re-join is ``presence`` (a stray snapshot would be buffered
+    ahead of it — D-14).
+    """
+    from app.shared.logging import configure_logging
+
+    configure_logging("INFO")
+    room, owner_session = _make_room_with_owner(
+        ws_client, "restore-owner-silent@example.com"
+    )
+    room_id = room["id"]
+
+    seeded_content = "print('owner-silent')\n"
+    version_id = await _seed_version(db_session, room_id, seeded_content, BASE_NOW)
+    anon = _join_anonymously(ws_client, room)
+    assert anon
+
+    with ws_client.websocket_connect(
+        f"/api/ws/rooms/{room_id}",
+        headers={"origin": _ORIGIN, "cookie": f"codelive_session={owner_session}"},
+    ) as owner_ws:
+        _join(owner_ws, 1)
+        with ws_client.websocket_connect(
+            f"/api/ws/rooms/{room_id}",
+            headers={"origin": _ORIGIN, "cookie": f"codelive_anon={anon}"},
+        ) as spectator:
+            join_snapshot = _join(spectator, 2)
+            # Drain the presence caused by the spectator's join.
+            peer_presence = owner_ws.receive_json()
+            assert peer_presence["type"] == "presence"
+            assert peer_presence["count"] == 2
+
+            capsys.readouterr()  # flush join noise before the restore
+            ws_client.cookies.clear()
+            ws_client.cookies.set("codelive_session", owner_session)
+            resp = ws_client.post(
+                f"/api/rooms/{room_id}/versions/{version_id}/restore"
+            )
+            ws_client.cookies.clear()
+
+            assert resp.status_code == 200
+            body = resp.json()
+            # C-03 / VERS-05: exactly {content, content_hash, id, created_at}
+            assert set(body) == {"content", "content_hash", "id", "created_at"}
+            assert body["content"] == seeded_content
+            assert body["content_hash"] == hashlib.sha256(
+                seeded_content.encode("utf-8")
+            ).hexdigest()
+
+            frame = spectator.receive_json()
+            assert frame["type"] == "snapshot"
+            assert frame["content"] == body["content"]
+            assert frame["content_hash"] == body["content_hash"]
+            assert frame["room_id"] == room_id
+            assert frame["request_id"] == join_snapshot["request_id"]
+
+            # D-14 owner silence: a buffered restore snapshot would be read
+            # before this presence frame.
+            owner_ws.send_json({"type": "join"})
+            probe = owner_ws.receive_json()
+            assert probe["type"] == "presence"
+            assert probe["count"] == 2
+
+
+async def test_restore_snapshot_reaches_authenticated_viewer_but_not_owner(
+    ws_client, db_session, capsys
+):
+    """VERS-07: an authenticated viewer (not anonymous) still receives it."""
+    from app.shared.logging import configure_logging
+
+    configure_logging("INFO")
+    room, owner_session = _make_room_with_owner(
+        ws_client, "restore-viewer-owner@example.com"
+    )
+    room_id = room["id"]
+
+    viewer_session = _register(ws_client, "restore-viewer@example.com", "Viewer")
+    resp = ws_client.post(
+        f"/api/rooms/{room_id}/join",
+        json={"code": room["access_code"]},
+        headers={"cookie": f"codelive_session={viewer_session}"},
+    )
+    assert resp.status_code == 200
+    ws_client.cookies.clear()
+
+    seeded_content = "print('viewer-gets-it')\n"
+    version_id = await _seed_version(db_session, room_id, seeded_content, BASE_NOW)
+
+    with ws_client.websocket_connect(
+        f"/api/ws/rooms/{room_id}",
+        headers={"origin": _ORIGIN, "cookie": f"codelive_session={owner_session}"},
+    ) as owner_ws:
+        _join(owner_ws, 1)
+        with ws_client.websocket_connect(
+            f"/api/ws/rooms/{room_id}",
+            headers={"origin": _ORIGIN, "cookie": f"codelive_session={viewer_session}"},
+        ) as viewer_ws:
+            viewer_join = _join(viewer_ws, 2)
+            peer_presence = owner_ws.receive_json()
+            assert peer_presence["type"] == "presence"
+            assert peer_presence["count"] == 2
+
+            capsys.readouterr()  # flush join noise before the restore
+            ws_client.cookies.set("codelive_session", owner_session)
+            resp = ws_client.post(
+                f"/api/rooms/{room_id}/versions/{version_id}/restore"
+            )
+            ws_client.cookies.clear()
+
+            assert resp.status_code == 200
+            body = resp.json()
+            assert set(body) == {"content", "content_hash", "id", "created_at"}
+
+            frame = viewer_ws.receive_json()
+            assert frame["type"] == "snapshot"
+            assert frame["content"] == body["content"] == seeded_content
+            assert frame["content_hash"] == body["content_hash"]
+            assert frame["room_id"] == room_id
+            assert frame["request_id"] == viewer_join["request_id"]
+
+            # D-14 owner silence via the presence round-trip.
+            owner_ws.send_json({"type": "join"})
+            probe = owner_ws.receive_json()
+            assert probe["type"] == "presence"
+            assert probe["count"] == 2
+
+
 async def test_restore_logs_one_hydrated_line_without_content(
     ws_client, db_session, capsys
 ):

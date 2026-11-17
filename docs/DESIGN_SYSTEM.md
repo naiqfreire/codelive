@@ -378,8 +378,8 @@ entrou nunca aparecem — o filtro é por `user_id` da sessão e `role = 'viewer
   lista após a invalidação do cache.
 - **Estados:** carregando (`role="status"` "Carregando salas…"), vazio (`EmptyState` "Você ainda não
   entrou em nenhuma sala" + link "Entrar com código" → `/rooms/join`), erro sem dados (`role="alert"`
-  + "Tentar novamente" ou "Entrar novamente" em 401) e erro com cache (lista permanece + banner
-  `role="alert"` com retry). O header também oferece "Entrar com código".
+  - "Tentar novamente" ou "Entrar novamente" em 401) e erro com cache (lista permanece + banner
+    `role="alert"` com retry). O header também oferece "Entrar com código".
 - **Contagem:** "X abertas · Y encerradas" com plural correto, sempre em texto (nunca só cor).
 - **Cache (SPEC §10):** `GET /api/rooms/joined` responde sob `rooms:joined:{user_id}` (TTL 30 s) e é
   invalidado ao entrar na sala e, porque o item carrega status e código, ao encerrar e ao regenerar
@@ -387,7 +387,8 @@ entrou nunca aparecem — o filtro é por `user_id` da sessão e `role = 'viewer
   `useJoinedRooms` usa a chave `['rooms','joined',userId]`: entra na persistência de `queryClient.ts`,
   só busca com sessão e é limpa ao sair ou trocar de usuário.
 - **Responsivo** em 375, 768, 1024 e 1440 px (grade de 1, 2 e 3 colunas, como em §6.7).
-### 6.12 Histórico de versões da sala (#41)
+
+### 6.13 Histórico de versões da sala (#41)
 
 Painel do dono para consultar e restaurar versões (RF11). A fatia vive em `features/versions/`:
 `VersionHistoryPanel` é apresentacional (lista, seleção e confirmação) e `VersionHistory` é a

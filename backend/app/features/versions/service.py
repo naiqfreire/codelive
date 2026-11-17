@@ -338,7 +338,7 @@ async def restore_version(
         duration_ms=duration_ms,
     )
     await live_code_public.broadcast_snapshot(
-        room_id, version_row.content, language
+        room_id, version_row.content, language, exclude_user_id=user.id
     )
     return RestoreResponse(
         content=version_row.content,
