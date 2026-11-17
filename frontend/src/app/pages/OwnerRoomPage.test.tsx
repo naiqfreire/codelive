@@ -2,6 +2,14 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import type { ReactElement } from 'react'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
+import type { RoomConnection } from '../../features/live_code'
+import {
+  CODE_LOADING_MESSAGE,
+  CONFLICT_ACCEPT_LABEL,
+  CONFLICT_KEEP_LABEL,
+  LATEST_VERSION_MESSAGE,
+  OVERSIZE_MESSAGE,
+} from '../../features/live_code'
 import type { RoomDetail } from '../../features/rooms'
 import OwnerRoomPage from './OwnerRoomPage'
 
@@ -14,18 +22,39 @@ const room: RoomDetail = {
   code: "print('oi')",
 }
 
+function makeConnection(overrides: Partial<RoomConnection> = {}): RoomConnection {
+  return {
+    status: 'connected',
+    code: "print('oi')",
+    language: 'python',
+    participantCount: 1,
+    role: 'owner',
+    lastError: null,
+    hasSnapshot: true,
+    isOversize: false,
+    conflict: null,
+    syncNotice: null,
+    updateCode: vi.fn(),
+    applyRestoredCode: vi.fn(),
+    acceptServerVersion: vi.fn(),
+    keepLocalVersion: vi.fn(),
+    ...overrides,
+  }
+}
+
 type PageProps = {
   room?: RoomDetail
+  connection?: RoomConnection
   onClose?: () => void
   onRegenerateCode?: () => void
   onLanguageChange?: (language: RoomDetail['language']) => void
   renderVersionHistory?: (onRestored: (content: string) => void) => ReactElement
 }
 
-function renderRoom(props: PageProps = {}) {
+function renderRoom({ connection = makeConnection(), ...props }: PageProps = {}) {
   return render(
     <MemoryRouter>
-      <OwnerRoomPage room={room} {...props} />
+      <OwnerRoomPage room={room} connection={connection} {...props} />
     </MemoryRouter>,
   )
 }
@@ -110,8 +139,12 @@ describe('OwnerRoomPage', () => {
     expect(screen.getByText('Histórico de teste')).toBeInTheDocument()
   })
 
-  it('applies the restored content to the editor', () => {
+  it('forwards the restored content without echoing it locally', () => {
+    const applyRestoredCode = vi.fn()
+    const connection = makeConnection({ applyRestoredCode })
+
     renderRoom({
+      connection,
       renderVersionHistory: (onRestored) => (
         <button type="button" onClick={() => onRestored("print('restaurado')\n")}>
           Restaurar de teste
@@ -121,15 +154,16 @@ describe('OwnerRoomPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Restaurar de teste' }))
 
-    expect(screen.getByRole('textbox', { name: /editor de código/i })).toHaveTextContent(
-      "print('restaurado')",
-    )
+    expect(applyRestoredCode).toHaveBeenCalledWith("print('restaurado')\n")
   })
 
   it('shows a not-found state without a room', () => {
     render(
       <MemoryRouter>
-        <OwnerRoomPage renderVersionHistory={() => <p>Histórico de teste</p>} />
+        <OwnerRoomPage
+          connection={makeConnection()}
+          renderVersionHistory={() => <p>Histórico de teste</p>}
+        />
       </MemoryRouter>,
     )
 
@@ -137,6 +171,83 @@ describe('OwnerRoomPage', () => {
     expect(screen.getByRole('link', { name: /voltar/i })).toHaveAttribute('href', '/rooms')
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
     expect(screen.queryByText('Histórico de teste')).not.toBeInTheDocument()
+  })
+})
+
+describe('OwnerRoomPage code recovery', () => {
+  it('locks the editor and explains the wait before the first snapshot', () => {
+    renderRoom({ connection: makeConnection({ code: '', hasSnapshot: false }) })
+
+    expect(screen.getByText(CODE_LOADING_MESSAGE)).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: /editor de código/i })).toHaveAttribute(
+      'contenteditable',
+      'false',
+    )
+  })
+
+  it('shows the recovered code and unlocks the editor after the snapshot', () => {
+    renderRoom({ connection: makeConnection({ code: 'recuperado', hasSnapshot: true }) })
+
+    const editor = screen.getByRole('textbox', { name: /editor de código/i })
+    expect(editor).toHaveAttribute('contenteditable', 'true')
+    expect(editor).toHaveTextContent('recuperado')
+    expect(screen.queryByText(CODE_LOADING_MESSAGE)).not.toBeInTheDocument()
+  })
+
+  it('keeps the editor editable while reconnecting after the snapshot', () => {
+    renderRoom({ connection: makeConnection({ hasSnapshot: true, status: 'reconnecting' }) })
+
+    expect(screen.getByRole('status')).toHaveTextContent('Reconectando…')
+    expect(screen.getByRole('textbox', { name: /editor de código/i })).toHaveAttribute(
+      'contenteditable',
+      'true',
+    )
+  })
+
+  it('shows the latest version notice after an accepted snapshot', () => {
+    renderRoom({ connection: makeConnection({ syncNotice: LATEST_VERSION_MESSAGE }) })
+
+    expect(screen.getByText(LATEST_VERSION_MESSAGE)).toBeInTheDocument()
+  })
+
+  it('shows the conflict and forwards the chosen action', () => {
+    const acceptServerVersion = vi.fn()
+    const keepLocalVersion = vi.fn()
+
+    renderRoom({
+      connection: makeConnection({
+        conflict: {
+          serverContent: 'servidor',
+          receivedAt: '2026-11-16T14:32:05.000Z',
+        },
+        acceptServerVersion,
+        keepLocalVersion,
+      }),
+    })
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/versão mais recente/i)
+
+    fireEvent.click(screen.getByRole('button', { name: CONFLICT_ACCEPT_LABEL }))
+    fireEvent.click(screen.getByRole('button', { name: CONFLICT_KEEP_LABEL }))
+
+    expect(acceptServerVersion).toHaveBeenCalledTimes(1)
+    expect(keepLocalVersion).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the editor editable while the conflict is open', () => {
+    renderRoom({
+      connection: makeConnection({
+        conflict: { serverContent: 'servidor', receivedAt: '2026-11-16T14:32:05.000Z' },
+      }),
+    })
+
+    expect(screen.getByRole('textbox')).toHaveAttribute('contenteditable', 'true')
+  })
+
+  it('warns when the local content exceeds the size limit', () => {
+    renderRoom({ connection: makeConnection({ isOversize: true }) })
+
+    expect(screen.getByText(OVERSIZE_MESSAGE)).toBeInTheDocument()
   })
 })
 
