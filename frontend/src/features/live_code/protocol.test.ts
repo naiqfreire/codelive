@@ -1,9 +1,22 @@
 import { describe, expect, it } from 'vitest'
-import { joinFrame, parseRoomFrame } from './protocol'
+import { codeUpdateFrame, joinFrame, parseRoomFrame } from './protocol'
 
 describe('joinFrame', () => {
   it('builds the client join frame', () => {
     expect(joinFrame()).toEqual({ type: 'join' })
+  })
+})
+
+describe('codeUpdateFrame', () => {
+  it('builds the full-content code_update frame', () => {
+    expect(codeUpdateFrame("print('oi')")).toEqual({
+      type: 'code_update',
+      content: "print('oi')",
+    })
+  })
+
+  it('keeps empty content as an explicit string', () => {
+    expect(codeUpdateFrame('')).toEqual({ type: 'code_update', content: '' })
   })
 })
 
