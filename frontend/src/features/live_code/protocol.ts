@@ -12,6 +12,9 @@ export type RoomRole = 'owner' | 'viewer'
 
 export type JoinFrame = { type: 'join' }
 
+/** Outbound full-content edit from the owner (backend `code_update` inbound). */
+export type CodeUpdateRequest = { type: 'code_update'; content: string }
+
 export type PresenceFrame = {
   type: 'presence'
   roomId: string
@@ -46,6 +49,16 @@ export type ServerFrame = PresenceFrame | SnapshotFrame | CodeUpdateFrame | Erro
 
 export function joinFrame(): JoinFrame {
   return { type: 'join' }
+}
+
+/**
+ * Build the owner's full-content edit frame.
+ *
+ * Mirrors the backend inbound contract: ``content`` is always a string, even
+ * when the editor is empty (the server replaces the whole document).
+ */
+export function codeUpdateFrame(content: string): CodeUpdateRequest {
+  return { type: 'code_update', content }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

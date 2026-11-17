@@ -13,6 +13,7 @@ export type LiveLogEvent =
   | 'reconnect_scheduled'
   | 'frame_received'
   | 'frame_ignored'
+  | 'code_update_sent'
 
 export function logLiveEvent(event: LiveLogEvent, details: Record<string, unknown> = {}): void {
   console.info('[live_code]', {

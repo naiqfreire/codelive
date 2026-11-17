@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { VersionHistory, versionKeys } from '../../features/versions'
 import OwnerRoomPage from '../pages/OwnerRoomPage'
+import { useDevRoomConnection } from './devConnection'
 import { createDevVersionsApi, resetDevVersions } from './devVersions'
 import type { DevVersionsState } from './devVersions'
 import { findSampleRoom } from './sampleRooms'
@@ -23,6 +24,7 @@ const STATES: Array<{ value: DevVersionsState; label: string }> = [
 export default function DevOwnerRoomPage() {
   const { roomId } = useParams()
   const room = findSampleRoom(roomId)
+  const connection = useDevRoomConnection(room, 'owner')
   const queryClient = useQueryClient()
   const [state, setState] = useState<DevVersionsState>('list')
   const api = useMemo(() => createDevVersionsApi(state), [state])
@@ -37,6 +39,7 @@ export default function DevOwnerRoomPage() {
     <div className="space-y-6">
       <OwnerRoomPage
         room={room}
+        connection={connection}
         renderVersionHistory={
           room
             ? (onRestored) => (

@@ -1,20 +1,30 @@
-import { useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { Button, EmptyState } from '../../shared/components'
 import { LanguageSelector } from '../../features/rooms'
-import type { RoomDetail, RoomLanguage } from '../../features/rooms'
-import { CodeEditor } from '../../features/live_code'
+import type { RoomLanguage, RoomSummary } from '../../features/rooms'
+import {
+  CODE_LOADING_MESSAGE,
+  CodeEditor,
+  ConflictNotice,
+  ConnectionStatus,
+  LatestVersionNotice,
+  OVERSIZE_MESSAGE,
+} from '../../features/live_code'
+import type { RoomConnection } from '../../features/live_code'
 import { RoomLayout } from '../layouts/RoomLayout'
 
 type OwnerRoomPageProps = {
-  room?: RoomDetail
+  room?: RoomSummary
+  /** Live channel owned by the route; the page only renders and forwards it. */
+  connection: RoomConnection
   onClose?: () => void
   onRegenerateCode?: () => void
   onLanguageChange?: (language: RoomLanguage) => void
   /**
    * Owner-only version history, wired by the composition that owns the API.
-   * The callback applies the restored content to the editor below.
+   * The callback applies the restored content to the editor below without
+   * echoing it back to the server (the restore already persisted it).
    */
   renderVersionHistory?: (onRestored: (content: string) => void) => ReactNode
 }
@@ -54,12 +64,12 @@ function BackLink() {
 
 export default function OwnerRoomPage({
   room,
+  connection,
   onClose,
   onRegenerateCode,
   onLanguageChange,
   renderVersionHistory,
 }: OwnerRoomPageProps) {
-  const [code, setCode] = useState(room?.code ?? '')
   const isClosed = room?.status === 'closed'
 
   if (!room) {
@@ -77,6 +87,10 @@ export default function OwnerRoomPage({
     )
   }
 
+  // Locked until the first snapshot so an empty editor never overwrites the
+  // persisted code. After that the draft stays editable even while offline.
+  const isLocked = isClosed || !connection.hasSnapshot
+
   return (
     <section aria-labelledby="owner-room-heading" className="space-y-6">
       <BackLink />
@@ -85,10 +99,13 @@ export default function OwnerRoomPage({
         title="Sua sala"
         headingId="owner-room-heading"
         accessCode={room.accessCode}
-        language={room.language}
+        language={connection.language ?? room.language}
         status={room.status}
         readOnly={isClosed}
         readOnlyNotice={CLOSED_NOTICE}
+        connection={
+          connection.status === 'idle' ? null : <ConnectionStatus status={connection.status} />
+        }
         actions={
           <RoomActions isClosed={isClosed} onClose={onClose} onRegenerateCode={onRegenerateCode} />
         }
@@ -101,15 +118,47 @@ export default function OwnerRoomPage({
         }
       >
         <h2 className="mb-2 text-sm font-medium text-foreground">Código da sala</h2>
+
+        {!connection.hasSnapshot && !isClosed ? (
+          <p className="mb-2 text-sm text-muted-foreground">{CODE_LOADING_MESSAGE}</p>
+        ) : null}
+
+        {connection.isOversize ? (
+          <p role="alert" className="mb-2 text-sm text-destructive">
+            {OVERSIZE_MESSAGE}
+          </p>
+        ) : null}
+
+        {connection.lastError ? (
+          <p role="alert" className="mb-2 text-sm text-destructive">
+            {connection.lastError.message}
+          </p>
+        ) : null}
+
+        {connection.conflict ? (
+          <div className="mb-3">
+            <ConflictNotice
+              conflict={connection.conflict}
+              onAcceptServer={connection.acceptServerVersion}
+              onKeepLocal={connection.keepLocalVersion}
+            />
+          </div>
+        ) : null}
+
         <CodeEditor
-          value={code}
-          language={room.language}
-          readOnly={isClosed}
-          onChange={setCode}
+          value={connection.code}
+          language={connection.language ?? room.language}
+          readOnly={isLocked}
+          onChange={connection.updateCode}
           label="Editor de código"
           className="h-[60vh] lg:h-[70vh]"
         />
-        {renderVersionHistory ? <div className="mt-4">{renderVersionHistory(setCode)}</div> : null}
+
+        <LatestVersionNotice message={connection.syncNotice} />
+
+        {renderVersionHistory ? (
+          <div className="mt-4">{renderVersionHistory(connection.applyRestoredCode)}</div>
+        ) : null}
       </RoomLayout>
     </section>
   )
