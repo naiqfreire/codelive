@@ -15,7 +15,9 @@ const room: RoomLookup = {
 }
 
 function renderPage(overrides: {
-  choice?: { nickname: string; anonymous: boolean } | null
+  anonymousEntry?: boolean
+  isSubmitting?: boolean
+  errorMessage?: string | null
   onJoin?: (choice: { nickname: string; anonymous: boolean }) => void
   onClose?: () => void
 } = {}) {
@@ -26,7 +28,9 @@ function renderPage(overrides: {
     <MemoryRouter>
       <IdentificationPage
         room={room}
-        choice={overrides.choice ?? null}
+        anonymousEntry={overrides.anonymousEntry ?? false}
+        isSubmitting={overrides.isSubmitting}
+        errorMessage={overrides.errorMessage}
         onJoin={overrides.onJoin ?? onJoin}
         onClose={overrides.onClose ?? onClose}
       />
@@ -45,6 +49,7 @@ describe('IdentificationPage', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     expect(screen.getByText(/sala k7m2qx/i)).toBeInTheDocument()
     expect(screen.getByText(/·\s*Java/)).toBeInTheDocument()
+    expect(screen.getByText(/entrar com sua conta/i)).toBeInTheDocument()
   })
 
   it('reports an authenticated choice', () => {
@@ -57,12 +62,27 @@ describe('IdentificationPage', () => {
   })
 
   it('reports an anonymous choice', () => {
-    const { onJoin } = renderPage()
+    const { onJoin } = renderPage({ anonymousEntry: true })
+
+    expect(screen.getByRole('button', { name: 'Entrar sem conta' })).toBeInTheDocument()
 
     fireEvent.change(screen.getByLabelText(/nickname/i), { target: { value: 'Ana' } })
     fireEvent.click(screen.getByRole('button', { name: 'Entrar sem conta' }))
 
     expect(onJoin).toHaveBeenCalledWith({ nickname: 'Ana', anonymous: true })
+  })
+
+  it('shows the submitting state inside the modal', () => {
+    renderPage({ isSubmitting: true })
+
+    expect(screen.getByRole('button', { name: /entrando/i })).toBeDisabled()
+  })
+
+  it('shows a server error inside the modal', () => {
+    renderPage({ errorMessage: 'Não foi possível entrar na sala. Tente novamente.' })
+
+    expect(screen.getByText(/não foi possível entrar na sala/i)).toBeInTheDocument()
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
   })
 
   it('closes the modal through the close button', () => {
@@ -71,13 +91,5 @@ describe('IdentificationPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Fechar' }))
 
     expect(onClose).toHaveBeenCalledTimes(1)
-  })
-
-  it('shows the recorded choice instead of the modal', () => {
-    renderPage({ choice: { nickname: 'Ana', anonymous: true } })
-
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    expect(screen.getByRole('status')).toHaveTextContent(/ana/i)
-    expect(screen.getByRole('status')).toHaveTextContent(/sem conta/i)
   })
 })
