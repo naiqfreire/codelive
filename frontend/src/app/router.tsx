@@ -16,11 +16,11 @@ const JoinRoomRoute = lazy(() => import('./routes/JoinRoomRoute'))
 
 // The fixture chunk is only reachable in development, so it never enters the
 // production bundle.
-const OwnerRoomPage = lazy(() =>
-  import.meta.env.DEV ? import('./dev/DevOwnerRoomPage') : import('./pages/OwnerRoomPage'),
+const OwnerRoom = lazy(() =>
+  import.meta.env.DEV ? import('./dev/DevOwnerRoomPage') : import('./routes/OwnerRoomRoute'),
 )
-const SpectatorRoomPage = lazy(() =>
-  import.meta.env.DEV ? import('./dev/DevSpectatorRoomPage') : import('./pages/SpectatorRoomPage'),
+const SpectatorRoom = lazy(() =>
+  import.meta.env.DEV ? import('./dev/DevSpectatorRoomPage') : import('./routes/SpectatorRoomRoute'),
 )
 
 function withSuspense(element: ReactNode) {
@@ -53,8 +53,8 @@ export const routes: RouteObject[] = [
           { path: 'joined', element: withSuspense(<JoinedRoomsRoute />) },
           { path: 'join', element: withSuspense(<CodeEntryRoute />) },
           { path: ':roomId/join', element: withSuspense(<JoinRoomRoute />) },
-          { path: ':roomId', element: withSuspense(<OwnerRoomPage />) },
-          { path: ':roomId/view', element: withSuspense(<SpectatorRoomPage />) },
+          { path: ':roomId', element: withSuspense(<OwnerRoom />) },
+          { path: ':roomId/view', element: withSuspense(<SpectatorRoom />) },
         ],
       },
     ],
