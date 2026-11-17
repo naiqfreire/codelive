@@ -32,6 +32,12 @@ type JoinedRoomsResponse = {
   items: JoinedRoomResponse[]
 }
 
+export type JoinRoomPayload = {
+  code: string
+  anonymous: boolean
+  nickname: string | null
+}
+
 export type RoomsApi = {
   listMine(): Promise<RoomSummary[]>
   listJoined(): Promise<JoinedRoom[]>
@@ -39,6 +45,7 @@ export type RoomsApi = {
   close(roomId: string): Promise<RoomSummary>
   regenerateCode(roomId: string): Promise<RoomSummary>
   getByCode(code: string): Promise<RoomLookup>
+  join(roomId: string, payload: JoinRoomPayload): Promise<RoomSummary>
 }
 
 /** Mirrors the backend `RoomOut` payload into the feature camelCase contract. */
@@ -114,5 +121,13 @@ export const roomsApi: RoomsApi = {
       { logPath: '/api/rooms/by-code/{codigo}' },
     )
     return toRoomLookup(room)
+  },
+
+  async join(roomId, payload) {
+    const room = await apiRequest<RoomResponse>(
+      `/api/rooms/${encodeURIComponent(roomId)}/join`,
+      { method: 'POST', body: payload },
+    )
+    return toRoomSummary(room)
   },
 }
