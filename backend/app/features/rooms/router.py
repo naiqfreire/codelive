@@ -50,14 +50,25 @@ async def list_my_rooms(
     return await service.list_rooms_for_owner(session, user)
 
 
-@router.get("/by-code/{codigo}", response_model=ByCodeResponse)
+@public_router.get("/by-code/{codigo}", response_model=ByCodeResponse)
 async def get_room_by_code(
     codigo: str,
-    user=Depends(require_authenticated),
+    user=Depends(get_current_user_optional),
     session: AsyncSession = Depends(get_session),
 ):
+    """Validate an access code for spectators, with or without an account.
+
+    The access code itself authorizes the read: the response carries room
+    metadata only, never the live content or any owner action. The optional
+    identity is used for the log and never to grant a role.
+    """
     room = await service.get_room_by_code(session, codigo)
-    log.info("room_by_code_lookup", room_id=str(room.id), user_id=str(user.id))
+    log.info(
+        "room_by_code_lookup",
+        room_id=str(room.id),
+        user_id=str(user.id) if user else None,
+        anonymous=user is None,
+    )
     return room
 
 
