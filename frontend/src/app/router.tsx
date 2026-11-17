@@ -43,18 +43,21 @@ export const routes: RouteObject[] = [
     ],
   },
   {
-    element: <ProtectedRoute />,
+    path: '/rooms',
+    element: <AppShell />,
     children: [
+      // Public entry: a spectator reaches these three screens without an
+      // account. They never render owner actions and the server still
+      // authorizes every mutation and the WebSocket channel.
+      { path: 'join', element: withSuspense(<CodeEntryRoute />) },
+      { path: ':roomId/join', element: withSuspense(<JoinRoomRoute />) },
+      { path: ':roomId/view', element: withSuspense(<SpectatorRoom />) },
       {
-        path: '/rooms',
-        element: <AppShell />,
+        element: <ProtectedRoute />,
         children: [
           { index: true, element: withSuspense(<RoomListRoute />) },
           { path: 'joined', element: withSuspense(<JoinedRoomsRoute />) },
-          { path: 'join', element: withSuspense(<CodeEntryRoute />) },
-          { path: ':roomId/join', element: withSuspense(<JoinRoomRoute />) },
           { path: ':roomId', element: withSuspense(<OwnerRoom />) },
-          { path: ':roomId/view', element: withSuspense(<SpectatorRoom />) },
         ],
       },
     ],
