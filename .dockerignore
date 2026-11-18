@@ -1,0 +1,32 @@
+# Build context hygiene: never let local secrets, virtualenvs, or host
+# artifacts reach a Docker image (task #49). .env must never be baked in.
+.env
+.env.*
+!.env.example
+.git
+.gitignore
+.github
+.venv
+venv
+**/__pycache__
+**/*.py[cod]
+.pytest_cache
+.coverage
+coverage
+htmlcov
+frontend/node_modules
+frontend/dist
+frontend/.vite
+# Runtime image only needs app/ + alembic/.
+backend/Dockerfile
+backend/tests
+backend/conftest.py
+**/*.log
+.idea
+.vscode
+.opencode
+.planning
+superpowers
+**/superpowers
+docs
+*_test_data
