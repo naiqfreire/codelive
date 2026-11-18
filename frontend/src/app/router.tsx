@@ -13,15 +13,10 @@ const RoomListRoute = lazy(() => import('./routes/RoomListRoute'))
 const JoinedRoomsRoute = lazy(() => import('./routes/JoinedRoomsRoute'))
 const CodeEntryRoute = lazy(() => import('./routes/CodeEntryRoute'))
 const JoinRoomRoute = lazy(() => import('./routes/JoinRoomRoute'))
-
-// The fixture chunk is only reachable in development, so it never enters the
-// production bundle.
-const OwnerRoom = lazy(() =>
-  import.meta.env.DEV ? import('./dev/DevOwnerRoomPage') : import('./routes/OwnerRoomRoute'),
-)
-const SpectatorRoom = lazy(() =>
-  import.meta.env.DEV ? import('./dev/DevSpectatorRoomPage') : import('./routes/SpectatorRoomRoute'),
-)
+// The live room screens always use the API-backed composition, in development
+// too: a fixture must never shadow a real room id (#48).
+const OwnerRoom = lazy(() => import('./routes/OwnerRoomRoute'))
+const SpectatorRoom = lazy(() => import('./routes/SpectatorRoomRoute'))
 
 function withSuspense(element: ReactNode) {
   return <Suspense fallback={<RouteFallback />}>{element}</Suspense>

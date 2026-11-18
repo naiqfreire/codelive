@@ -275,8 +275,8 @@ espectador (RNF03). Compõe o `Modal` da §6.8 e o `TextField` de `shared/`.
   decide a identidade a partir da sessão e envia `POST /join`. Quando `accessCode` é informado, o
   código aparece na descrição. Falhas do servidor chegam por `error` e continuam visíveis dentro do
   modal aberto.
-- **Revisão visual:** a página `/rooms/join` existe apenas em `import.meta.env.DEV`; a rota real
-  de entrada por código é descrita na §6.10.
+- **Revisão visual:** a página `/rooms/join` é a rota real de entrada por código (§6.10), em
+  desenvolvimento e em produção; o fixture DEV que a substituía foi removido na #48.
 
 ### 6.10 Entrada por código e identificação (#25)
 
@@ -447,9 +447,10 @@ restaurado ao editor da página, sem duplicar o estado do código.
   `cursor-pointer`, nenhuma informação só por cor (origem e estado sempre em texto) e
   `motion-safe`/`prefers-reduced-motion` respeitados. O painel ocupa a largura do corpo em todas as
   faixas; o `aside` de participantes da §6.11 não muda.
-- **Revisão visual.** `DevOwnerRoomPage` liga o painel a uma API em memória e a um seletor
-  DEV-only de estados (Lista / Vazio / Carregando / Erro), porque as telas da sala ainda usam
-  fixtures. A restauração de desenvolvimento também atualiza o editor.
+- **Revisão visual.** A tela é a rota real `/rooms/:roomId` (dono) em desenvolvimento e em
+  produção; os estados do painel são revisados com o backend e o banco locais. O seletor DEV de
+  estados e a API em memória foram removidos na #48, junto com os fixtures que sombreavam o id
+  real da sala.
 
 ### 6.14 Recuperação de código e reconexão (#42)
 
@@ -471,6 +472,11 @@ ainda não enviada (RNF02/RNF04). O canal vive em `features/live_code/useRoomCon
 - **Editor do dono travado até o primeiro snapshot.** Antes do `snapshot` o editor é somente
   leitura e explica "Carregando código da sala…". Isso evita que um documento vazio sobrescreva o
   código persistido. Depois do primeiro snapshot ele fica editável mesmo desconectado.
+- **Somente leitura em um único provedor.** `readOnlyExtensions(readOnly)` é o único lugar que
+  define `EditorState.readOnly`, `EditorView.editable` e `aria-readonly`, sempre dentro do
+  `Compartment` do `CodeEditor` (#48). As duas facetas guardam o primeiro valor da ordem de
+  extensões; um segundo provedor fixo no estado inicial congelaria o editor e tornaria a
+  reconfiguração um no-op — era o que impedia o dono de digitar depois do primeiro snapshot.
 - **Envio do dono.** `onChange → updateCode` guarda o rascunho e agenda um `code_update` com debounce
   de 300 ms, sempre com o conteúdo completo. Antes de enviar, o tamanho é medido em bytes UTF-8
   (`TextEncoder`): acima de 256 KiB (`262_144`) nada é enviado e surge um alerta "O código excede o
@@ -492,9 +498,10 @@ ainda não enviada (RNF02/RNF04). O canal vive em `features/live_code/useRoomCon
 - **Restauração de versão.** `applyRestoredCode` aplica o conteúdo devolvido pela §6.13 sem
   reenviá-lo, porque a restauração já persistiu o novo estado no servidor. O aviso fica a cargo da
   região do histórico.
-- **Revisão visual.** `DevOwnerRoomPage` e `DevSpectatorRoomPage` usam um canal em memória
-  (`devConnection.ts`) para manter o editor editável/somente leitura e revisar a restauração sem
-  backend.
+- **Revisão visual.** `npm run dev` usa as mesmas rotas e o mesmo canal WebSocket de produção: o
+  proxy `/api` do Vite (com `ws: true`) leva o cookie de sessão ao backend e mantém a origem na
+  allow-list. Os fixtures em memória (`DevOwnerRoomPage`, `DevSpectatorRoomPage`,
+  `devConnection.ts`) foram removidos na #48 porque interceptavam o id real da sala.
 
 ## 7. Checklist de entrega
 
