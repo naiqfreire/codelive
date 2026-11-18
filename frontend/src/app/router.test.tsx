@@ -6,8 +6,28 @@ import { AuthProvider } from '../features/auth'
 import type { AuthApi } from '../features/auth'
 import { anonymousAuthError, createFakeAuthApi } from '../test/auth'
 import { QueryProvider } from '../test/query'
-import { SAMPLE_ROOMS } from './dev/sampleRooms'
+import { installSilentWebSocket } from '../test/websocket'
 import { routes } from './router'
+
+const ROOM_ID = '11111111-1111-1111-1111-111111111111'
+
+const ROOM_RESPONSE = {
+  id: ROOM_ID,
+  access_code: 'K7M2QX',
+  language: 'python',
+  status: 'active',
+  created_at: '2026-11-09T17:30:00Z',
+}
+
+const JOINED_ROOM_RESPONSE = {
+  ...ROOM_RESPONSE,
+  room_id: ROOM_ID,
+  user_id: '22222222-2222-2222-2222-222222222222',
+  role: 'viewer',
+  is_anonymous: false,
+  nickname: 'Ana',
+  joined_at: '2026-11-09T17:35:00Z',
+}
 
 const fetchMock = vi.fn()
 
@@ -15,13 +35,21 @@ beforeEach(() => {
   fetchMock.mockReset()
   fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
     const url = String(input)
-    const body = url.includes('/api/rooms/joined') ? { items: [] } : []
+    let body: unknown = []
+
+    if (url.includes('/api/rooms/mine')) {
+      body = [ROOM_RESPONSE]
+    } else if (url.includes('/api/rooms/joined')) {
+      body = { items: [JOINED_ROOM_RESPONSE] }
+    }
+
     return new Response(JSON.stringify(body), {
       status: 200,
       headers: { 'content-type': 'application/json' },
     })
   })
   vi.stubGlobal('fetch', fetchMock)
+  installSilentWebSocket()
 })
 
 afterEach(() => {
@@ -142,20 +170,20 @@ describe('router', () => {
   })
 
   it('guards the identification step when it is opened directly', async () => {
-    renderRoute(`/rooms/${SAMPLE_ROOMS[0].id}/join`, anonymousApi())
+    renderRoute(`/rooms/${ROOM_ID}/join`, anonymousApi())
 
     expect(await screen.findByRole('heading', { name: /código necessário/i })).toBeInTheDocument()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
-  it('renders an owner room from the fixture', async () => {
-    renderRoute(`/rooms/${SAMPLE_ROOMS[0].id}`)
+  it('renders an owner room resolved from the API', async () => {
+    renderRoute(`/rooms/${ROOM_ID}`)
 
     expect(await screen.findByRole('heading', { name: /sua sala/i })).toBeInTheDocument()
   })
 
-  it('renders a read-only spectator room from the fixture', async () => {
-    renderRoute(`/rooms/${SAMPLE_ROOMS[0].id}/view`)
+  it('renders a read-only spectator room resolved from the joined list', async () => {
+    renderRoute(`/rooms/${ROOM_ID}/view`)
 
     expect(await screen.findByRole('heading', { name: /sala ao vivo/i })).toBeInTheDocument()
 
@@ -163,14 +191,12 @@ describe('router', () => {
     expect(editor).toHaveAttribute('contenteditable', 'false')
   })
 
-  it('renders a read-only spectator room for an anonymous visitor', async () => {
-    renderRoute(`/rooms/${SAMPLE_ROOMS[0].id}/view`, anonymousApi())
+  it('asks the anonymous spectator for the code when the navigation state is missing', async () => {
+    renderRoute(`/rooms/${ROOM_ID}/view`, anonymousApi())
 
-    expect(await screen.findByRole('heading', { name: /sala ao vivo/i })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: /sala não encontrada/i })).toBeInTheDocument()
+    expect(screen.getByText(/informe o código da sala/i)).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /minhas salas/i })).not.toBeInTheDocument()
-
-    const editor = await screen.findByRole('textbox', { name: /código da sala/i })
-    expect(editor).toHaveAttribute('contenteditable', 'false')
   })
 
   it('shows the not-found state for an unknown room', async () => {
