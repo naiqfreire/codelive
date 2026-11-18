@@ -47,7 +47,6 @@ export function CodeEditor({
     const view = new EditorView({
       state: createEditorState({
         doc: initialValueRef.current,
-        readOnly: initialReadOnlyRef.current,
         label: initialLabelRef.current,
         onChange: (next) => {
           if (!syncingRef.current) {

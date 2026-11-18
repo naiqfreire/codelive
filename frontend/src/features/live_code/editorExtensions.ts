@@ -13,7 +13,6 @@ import { codeEditorThemeExtensions } from './editorTheme'
 
 export type CreateEditorStateOptions = {
   doc: string
-  readOnly?: boolean
   label?: string
   onChange?: (value: string) => void
   extraExtensions?: Extension
@@ -21,6 +20,13 @@ export type CreateEditorStateOptions = {
 
 const DEFAULT_LABEL = 'Editor de código'
 
+/**
+ * Read-only facets. Must be the only provider of `EditorState.readOnly`,
+ * `EditorView.editable` and `aria-readonly`, always inside a compartment:
+ * both facets keep the FIRST value in extension order, so a second provider
+ * (for example set at creation) would freeze the editor and make a later
+ * reconfigure a no-op (#48).
+ */
 export function readOnlyExtensions(readOnly: boolean): Extension {
   return [
     EditorState.readOnly.of(readOnly),
@@ -31,7 +37,6 @@ export function readOnlyExtensions(readOnly: boolean): Extension {
 
 export function createEditorState({
   doc,
-  readOnly = false,
   label = DEFAULT_LABEL,
   onChange,
   extraExtensions = [],
@@ -46,11 +51,8 @@ export function createEditorState({
       history(),
       keymap.of([...defaultKeymap, ...historyKeymap]),
       codeEditorThemeExtensions,
-      EditorState.readOnly.of(readOnly),
-      EditorView.editable.of(!readOnly),
       EditorView.contentAttributes.of({
         'aria-label': label,
-        'aria-readonly': String(readOnly),
       }),
       EditorView.updateListener.of((update) => {
         if (update.docChanged) {

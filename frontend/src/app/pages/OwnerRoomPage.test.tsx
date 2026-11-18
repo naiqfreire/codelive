@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ReactElement } from 'react'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
@@ -51,12 +51,16 @@ type PageProps = {
   renderVersionHistory?: (onRestored: (content: string) => void) => ReactElement
 }
 
-function renderRoom({ connection = makeConnection(), ...props }: PageProps = {}) {
-  return render(
+function roomPage({ connection = makeConnection(), ...props }: PageProps = {}) {
+  return (
     <MemoryRouter>
       <OwnerRoomPage room={room} connection={connection} {...props} />
-    </MemoryRouter>,
+    </MemoryRouter>
   )
+}
+
+function renderRoom(props: PageProps = {}) {
+  return render(roomPage(props))
 }
 
 describe('OwnerRoomPage', () => {
@@ -191,6 +195,26 @@ describe('OwnerRoomPage code recovery', () => {
     const editor = screen.getByRole('textbox', { name: /editor de código/i })
     expect(editor).toHaveAttribute('contenteditable', 'true')
     expect(editor).toHaveTextContent('recuperado')
+    expect(screen.queryByText(CODE_LOADING_MESSAGE)).not.toBeInTheDocument()
+  })
+
+  it('unlocks the editor when the first snapshot arrives after mount', async () => {
+    const { rerender } = renderRoom({
+      connection: makeConnection({ code: '', hasSnapshot: false }),
+    })
+
+    expect(screen.getByRole('textbox', { name: /editor de código/i })).toHaveAttribute(
+      'contenteditable',
+      'false',
+    )
+
+    rerender(roomPage({ connection: makeConnection({ code: 'recuperado', hasSnapshot: true }) }))
+
+    await waitFor(() => {
+      const editor = screen.getByRole('textbox', { name: /editor de código/i })
+      expect(editor).toHaveAttribute('contenteditable', 'true')
+      expect(editor).toHaveTextContent('recuperado')
+    })
     expect(screen.queryByText(CODE_LOADING_MESSAGE)).not.toBeInTheDocument()
   })
 

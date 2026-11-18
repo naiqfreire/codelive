@@ -1,7 +1,7 @@
-import { EditorState } from '@codemirror/state'
+import { Compartment, EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createEditorState, syncDocument } from './editorExtensions'
+import { createEditorState, readOnlyExtensions, syncDocument } from './editorExtensions'
 
 const views: EditorView[] = []
 
@@ -35,17 +35,38 @@ describe('createEditorState', () => {
     expect(view.state.facet(EditorView.editable)).toBe(true)
     expect(view.contentDOM.getAttribute('contenteditable')).toBe('true')
     expect(view.contentDOM.getAttribute('aria-label')).toBe('Editor de código')
-    expect(view.contentDOM.getAttribute('aria-readonly')).toBe('false')
+    expect(view.contentDOM.getAttribute('aria-readonly')).toBeNull()
   })
 
   it('enforces read-only for spectators', () => {
-    const view = mountEditor({ doc: 'x', readOnly: true, label: 'Código da sala' })
+    const view = mountEditor({
+      doc: 'x',
+      label: 'Código da sala',
+      extraExtensions: readOnlyExtensions(true),
+    })
 
     expect(view.state.facet(EditorState.readOnly)).toBe(true)
     expect(view.state.facet(EditorView.editable)).toBe(false)
     expect(view.contentDOM.getAttribute('contenteditable')).toBe('false')
     expect(view.contentDOM.getAttribute('aria-label')).toBe('Código da sala')
     expect(view.contentDOM.getAttribute('aria-readonly')).toBe('true')
+  })
+
+  it('switches read-only after mount through a compartment', () => {
+    const readOnly = new Compartment()
+    const view = mountEditor({
+      doc: 'x',
+      extraExtensions: readOnly.of(readOnlyExtensions(true)),
+    })
+
+    expect(view.contentDOM.getAttribute('contenteditable')).toBe('false')
+
+    view.dispatch({ effects: readOnly.reconfigure(readOnlyExtensions(false)) })
+
+    expect(view.state.facet(EditorState.readOnly)).toBe(false)
+    expect(view.state.facet(EditorView.editable)).toBe(true)
+    expect(view.contentDOM.getAttribute('contenteditable')).toBe('true')
+    expect(view.contentDOM.getAttribute('aria-readonly')).toBe('false')
   })
 
   it('reports document changes to the listener', () => {

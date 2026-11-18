@@ -38,4 +38,17 @@ describe('CodeEditor', () => {
       expect(screen.getByRole('textbox')).toHaveTextContent('int x;')
     })
   })
+
+  it('unlocks the editor when readOnly turns false after mount', async () => {
+    const { rerender } = render(<CodeEditor value="" language="python" readOnly />)
+
+    expect(screen.getByRole('textbox')).toHaveAttribute('contenteditable', 'false')
+
+    rerender(<CodeEditor value="" language="python" />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('textbox')).toHaveAttribute('contenteditable', 'true')
+      expect(screen.getByRole('textbox')).toHaveAttribute('aria-readonly', 'false')
+    })
+  })
 })
