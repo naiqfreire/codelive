@@ -93,9 +93,14 @@ Copy the output into `.env`, replacing the placeholder value.
 ## Step 4 — Start the database
 
 ```powershell
-docker compose up -d --wait
+docker compose up -d --wait postgres postgres_test
 docker ps
 ```
+
+> **Shortcut:** `docker compose up --build` skips steps 4-6 — it starts the
+> database, applies the migrations, runs the API and serves the built frontend
+> at <http://localhost:8080>. The steps below are for developing with reload on
+> the host.
 
 Two healthy containers: `codelive_postgres` (port 5432) and
 `codelive_postgres_test` (port 5433).
@@ -155,7 +160,7 @@ Both should end with `passed`.
 | `cp .env.example .env`                  | `Copy-Item .env.example .env`                        |
 | `cd backend && cmd`                     | `cd backend` then `cmd` (or `;`)                     |
 | `curl http://localhost:8000/api/health` | `Invoke-RestMethod http://localhost:8000/api/health` |
-| `docker compose up -d --wait`           | _(unchanged)_                                        |
+| `docker compose up -d --wait postgres postgres_test` | _(unchanged)_                                        |
 | `alembic upgrade head`                  | `& ..\.venv\Scripts\python.exe -m alembic upgrade head` (from `backend/`) |
 | `uvicorn app.main:app ...`              | `& ..\.venv\Scripts\python.exe -m uvicorn app.main:app ...` (from `backend/`) |
 
@@ -170,6 +175,6 @@ See `docs/TUTORIAL-WINDOWS.pt-BR.md` for the same guide in Portuguese.
 | `docker: command not found` | Docker not installed/started | Install and start Docker Desktop |
 | `No module named 'alembic'` | Dependencies not installed | Re-run step 2 and verify with `-m pip show alembic uvicorn` |
 | `ModuleNotFoundError: No module named 'app'` | Wrong directory | Run tests from the project root, or the server from `backend/` |
-| Health check returns `db: unavailable` | Database down | `docker compose up -d --wait` (step 4) |
+| Health check returns `db: unavailable` | Database down | `docker compose up -d --wait postgres postgres_test` (step 4) |
 | You log in but immediately log out | Wrong host | Use `http://localhost:8000`, not a LAN IP (cookie is `Secure`) |
 | `pip: command not found` | venv created without pip | Follow step 1's `get-pip.py` bootstrap |
