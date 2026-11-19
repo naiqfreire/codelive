@@ -43,7 +43,7 @@ jobs:
           PY
 
       - name: Start PostgreSQL (Docker Compose)
-        run: docker compose up -d --wait
+        run: docker compose up -d --wait postgres postgres_test
 
       - name: Run migrations (test DB)
         working-directory: backend
@@ -58,5 +58,42 @@ jobs:
         run: python -m pytest backend/tests/integration -q
 
       - name: Tear down PostgreSQL
+        if: always()
+        run: docker compose --profile test down -v
+
+  docker:
+    name: Docker (full stack smoke)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create .env from template
+        run: |
+          cp .env.example .env
+          python3 - <<'PY'
+          import secrets, pathlib
+          p = pathlib.Path(".env")
+          lines = [
+              f"SESSION_SECRET={secrets.token_urlsafe(32)}"
+              if line.startswith("SESSION_SECRET=")
+              else line
+              for line in p.read_text().splitlines()
+          ]
+          p.write_text("\n".join(lines) + "\n")
+          PY
+
+      - name: Build and start the stack
+        run: docker compose up --build -d --wait
+
+      - name: Smoke test (SPA, /api proxy, WebSocket upgrade)
+        run: bash scripts/smoke-docker.sh
+
+      - name: Container logs
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Tear down
         if: always()
         run: docker compose down -v

@@ -45,6 +45,7 @@ Skills add task-specific guidance. They do not replace `AGENTS.md`, the specs, o
 - Browsers: current versions of Chrome, Firefox, and Edge.
 - Systems: Windows and Linux.
 - Tools: free and open-source only.
+- Container images (authorized 2026-11-18, task #49): python:3.14.10-slim (backend), node:22.22-alpine (frontend build), nginx:1.31-alpine (frontend runtime); PostgreSQL stays on postgres:18-alpine.
 
 ## Architecture rules
 
@@ -203,6 +204,14 @@ Load:
 
 ```bash
 k6 run loadtest/rooms.js
+```
+
+Docker (full stack: PostgreSQL + migrations + API + SPA behind nginx):
+
+```bash
+docker compose up --build
+bash scripts/smoke-docker.sh
+docker compose down
 ```
 
 ## Quality gates

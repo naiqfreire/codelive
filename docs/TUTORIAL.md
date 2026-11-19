@@ -119,8 +119,13 @@ That is why it is listed in `.gitignore`.
 CodeLive uses PostgreSQL, running inside Docker. Start it:
 
 ```bash
-docker compose up -d --wait
+docker compose up -d --wait postgres postgres_test
 ```
+
+> **Shortcut:** `docker compose up --build` skips steps 4-6 entirely — it starts
+> the database, applies the migrations, runs the API and serves the built
+> frontend at <http://localhost:8080>. The steps below are for developing with
+> reload on the host.
 
 This starts two databases:
 
@@ -244,7 +249,7 @@ Every error response looks like this:
 | ------- | ------------ | --- |
 | `docker: command not found` | Docker not installed/started | Install and start Docker; on WSL enable its WSL integration |
 | `ModuleNotFoundError: No module named 'app'` | Wrong directory | Run tests from the project root, or the server from `backend/` |
-| Health check returns `db: unavailable` | Database down | `docker compose up -d --wait` (step 4) |
+| Health check returns `db: unavailable` | Database down | `docker compose up -d --wait postgres postgres_test` (step 4) |
 | You log in but immediately log out | Wrong host | Use `http://localhost:8000`, not a LAN IP (cookie is `Secure`) |
 | `pip: command not found` | venv created without pip | Follow step 1's `get-pip.py` bootstrap |
 | `No module named 'alembic'` | Dependencies not installed | Re-run step 2 and verify with `-m pip show alembic uvicorn` |

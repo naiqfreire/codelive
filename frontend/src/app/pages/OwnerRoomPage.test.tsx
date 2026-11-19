@@ -90,6 +90,20 @@ describe('OwnerRoomPage', () => {
     expect(screen.getByText('Aberta')).toBeInTheDocument()
   })
 
+  it('shows the live participant count from the socket', () => {
+    renderRoom({ connection: makeConnection({ participantCount: 2 }) })
+
+    expect(screen.getByRole('complementary', { name: 'Participantes' })).toBeInTheDocument()
+    expect(screen.getByText('2 participantes conectados')).toBeInTheDocument()
+    expect(screen.queryByText(/nenhum participante conectado/i)).not.toBeInTheDocument()
+  })
+
+  it('uses the singular for one connected participant', () => {
+    renderRoom({ connection: makeConnection({ participantCount: 1 }) })
+
+    expect(screen.getByText('1 participante conectado')).toBeInTheDocument()
+  })
+
   it('does not mark the active room as read-only', () => {
     renderRoom()
 

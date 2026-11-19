@@ -94,9 +94,14 @@ Copie a saída para o `.env`, substituindo o valor de exemplo.
 ## Passo 4 — Iniciar o banco de dados
 
 ```powershell
-docker compose up -d --wait
+docker compose up -d --wait postgres postgres_test
 docker ps
 ```
+
+> **Atalho:** `docker compose up --build` pula os passos 4 a 6 — sobe o banco,
+> aplica as migrações, roda a API e serve o frontend compilado em
+> <http://localhost:8080>. Os passos abaixo são para desenvolver com reload na
+> máquina.
 
 Dois contêineres saudáveis: `codelive_postgres` (porta 5432) e
 `codelive_postgres_test` (porta 5433).
@@ -156,7 +161,7 @@ Ambos devem terminar com `passed`.
 | `cp .env.example .env`                  | `Copy-Item .env.example .env`                        |
 | `cd backend && cmd`                     | `cd backend` e depois `cmd` (ou `;`)                 |
 | `curl http://localhost:8000/api/health` | `Invoke-RestMethod http://localhost:8000/api/health` |
-| `docker compose up -d --wait`           | _(igual)_                                            |
+| `docker compose up -d --wait postgres postgres_test` | _(igual)_                                            |
 | `alembic upgrade head`                  | `& ..\.venv\Scripts\python.exe -m alembic upgrade head` (de `backend/`) |
 | `uvicorn app.main:app ...`              | `& ..\.venv\Scripts\python.exe -m uvicorn app.main:app ...` (de `backend/`) |
 
@@ -171,6 +176,6 @@ Veja `docs/TUTORIAL-WINDOWS.md` para o mesmo guia em inglês.
 | `docker: command not found` | Docker não instalado/iniciado | Instale e inicie o Docker Desktop |
 | `No module named 'alembic'` | Dependências não instaladas | Rode novamente o passo 2 e verifique com `-m pip show alembic uvicorn` |
 | `ModuleNotFoundError: No module named 'app'` | Diretório errado | Rode os testes a partir da raiz; o servidor a partir de `backend/` |
-| Health check retorna `db: unavailable` | Banco parado | `docker compose up -d --wait` (passo 4) |
+| Health check retorna `db: unavailable` | Banco parado | `docker compose up -d --wait postgres postgres_test` (passo 4) |
 | Você loga e cai na hora | Host errado | Use `http://localhost:8000`, não IP da rede local (cookie é `Secure`) |
 | `pip: command not found` | venv criado sem pip | Siga o bootstrap com `get-pip.py` do passo 1 |

@@ -120,8 +120,13 @@ local. É por isso que ele está no `.gitignore`.
 O CodeLive usa PostgreSQL, rodando dentro do Docker. Inicie com:
 
 ```bash
-docker compose up -d --wait
+docker compose up -d --wait postgres postgres_test
 ```
+
+> **Atalho:** `docker compose up --build` dispensa os passos 4 a 6 — sobe o
+> banco, aplica as migrações, roda a API e serve o frontend compilado em
+> <http://localhost:8080>. Os passos abaixo são para desenvolver com reload na
+> máquina.
 
 Isso sobe dois bancos:
 
@@ -247,7 +252,7 @@ Toda resposta de erro tem este formato:
 | ------- | -------------- | -------- |
 | `docker: command not found` | Docker não instalado/iniciado | Instale e inicie o Docker; no WSL, ative a integração WSL |
 | `ModuleNotFoundError: No module named 'app'` | Diretório errado | Rode os testes a partir da raiz; o servidor a partir de `backend/` |
-| Health check retorna `db: unavailable` | Banco parado | `docker compose up -d --wait` (passo 4) |
+| Health check retorna `db: unavailable` | Banco parado | `docker compose up -d --wait postgres postgres_test` (passo 4) |
 | Você loga e cai na hora | Host errado | Use `http://localhost:8000`, não IP da rede local (cookie é `Secure`) |
 | `pip: command not found` | venv criado sem pip | Siga o bootstrap com `get-pip.py` do passo 1 |
 | `No module named 'alembic'` | Dependências não instaladas | Rode novamente o passo 2 e verifique com `-m pip show alembic uvicorn` |

@@ -1,3 +1,9 @@
+# The migrate job and the API run the same image and both declare the build
+# config, so `docker compose up --build <service>` works whichever one you name.
+x-backend-build: &backend-build
+  context: .
+  dockerfile: backend/Dockerfile
+
 services:
   postgres:
     image: postgres:18-alpine
@@ -19,10 +25,12 @@ services:
     networks:
       - codelive_network
 
+  # Integration-test database. Opt-in: `docker compose --profile test up -d postgres_test`.
   postgres_test:
     image: postgres:18-alpine
     container_name: codelive_postgres_test
     restart: unless-stopped
+    profiles: ["test"]
     environment:
       POSTGRES_USER: codelive
       POSTGRES_PASSWORD: codelive
@@ -36,6 +44,59 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - codelive_network
+
+  # One-shot schema upgrade. Runs once per `up`, exits 0, and gates the backend
+  # so migrations are never applied concurrently by app replicas.
+  migrate:
+    build: *backend-build
+    image: codelive-backend:local
+    container_name: codelive_migrate
+    restart: "no"
+    command: ["alembic", "upgrade", "head"]
+    working_dir: /app
+    environment:
+      DATABASE_URL: postgresql+psycopg://codelive:codelive@postgres:5432/codelive
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - codelive_network
+
+  backend:
+    build: *backend-build
+    image: codelive-backend:local
+    container_name: codelive_backend
+    restart: unless-stopped
+    environment:
+      # Container-internal hostname + the browser origin served by the
+      # frontend container (OriginCheckMiddleware validates it on writes).
+      # SESSION_SECRET is interpolated from the repo-root .env, never baked in.
+      DATABASE_URL: postgresql+psycopg://codelive:codelive@postgres:5432/codelive
+      SESSION_SECRET: ${SESSION_SECRET:?define SESSION_SECRET in .env (copy .env.example)}
+      ALLOWED_ORIGINS: http://localhost:8080
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    expose:
+      - "8000"
+    networks:
+      - codelive_network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: codelive-frontend:local
+    container_name: codelive_frontend
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    depends_on:
+      backend:
+        condition: service_healthy
     networks:
       - codelive_network
 

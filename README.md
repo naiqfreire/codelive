@@ -23,6 +23,35 @@ Step-by-step tutorials to set up and run the project on your machine:
 - **Linux, macOS or WSL:** [docs/TUTORIAL.md](docs/TUTORIAL.md) (English) · [docs/TUTORIAL.pt-BR.md](docs/TUTORIAL.pt-BR.md) (Português)
 - **Windows (native):** [docs/TUTORIAL-WINDOWS.md](docs/TUTORIAL-WINDOWS.md) (English) · [docs/TUTORIAL-WINDOWS.pt-BR.md](docs/TUTORIAL-WINDOWS.pt-BR.md) (Português)
 
+## 🐳 Run everything with Docker
+
+Requirements: Docker Desktop (Windows/macOS) or Docker Engine with Compose.
+
+```bash
+cp .env.example .env      # first run only: set SESSION_SECRET
+docker compose up --build
+```
+
+Open <http://localhost:8080>. A single command starts PostgreSQL, applies the
+Alembic migrations, runs the API and serves the built SPA through nginx on one
+origin, so the session cookie and the room WebSocket behave exactly as they do
+in development.
+
+```bash
+docker compose up -d --wait   # same stack, detached
+docker compose logs -f backend
+docker compose down           # stop, keep the database volume
+docker compose down -v        # stop and delete the database volume
+bash scripts/smoke-docker.sh       # smoke test: SPA, /api proxy, WebSocket upgrade
+```
+
+The integration-test database is opt-in and needs the profile to be stopped
+too: `docker compose --profile test up -d --wait postgres_test` to start it,
+`docker compose --profile test down -v` to remove everything.
+
+The tutorials above remain the way to run the app natively, with backend
+reload and the Vite dev server.
+
 ## 🖥️ Frontend
 
 Requirements: Node.js 20+ and npm.

@@ -106,6 +106,7 @@ export default function OwnerRoomPage({
         connection={
           connection.status === 'idle' ? null : <ConnectionStatus status={connection.status} />
         }
+        participantCount={connection.participantCount}
         actions={
           <RoomActions isClosed={isClosed} onClose={onClose} onRegenerateCode={onRegenerateCode} />
         }
